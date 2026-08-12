@@ -139,6 +139,37 @@ export const modeCopy = {
       { label: "Watch the store for 2 hrs", meta: "1.1 km · $20", angle: 260, radius: 0.9 },
       { label: "Repaint the gate", meta: "0.3 km · $60", angle: 320, radius: 0.45 },
     ],
+    dashboard: {
+      name: "Ana R.",
+      headerTitle: "Worker Dashboard",
+      status: "You're online · available for gigs",
+      earningsLabel: "Earned so far",
+      earnings: "$1,240",
+      earningsSub: "18 gigs completed · $180 this week",
+      gigs: [
+        {
+          title: "Fix a leaky faucet",
+          type: "quick",
+          host: "Jomar S.",
+          pay: "$35",
+          meta: "0.4 km · today",
+        },
+        {
+          title: "Weekend yard clean-up",
+          type: "open",
+          host: "Liza C.",
+          pay: "$40",
+          meta: "0.6 km · tomorrow",
+        },
+        {
+          title: "Repaint the gate",
+          type: "offered",
+          host: "Ric D.",
+          pay: "$60",
+          meta: "0.3 km · this week",
+        },
+      ],
+    },
   },
   host: {
     label: "I need help",
@@ -157,5 +188,112 @@ export const modeCopy = {
       { label: "Ric D. · Painter", meta: "1.0 km · ★4.7", angle: 280, radius: 0.9 },
       { label: "Liza C. · Errands", meta: "0.3 km · ★4.9", angle: 340, radius: 0.4 },
     ],
+    dashboard: {
+      name: "Maria K.",
+      headerTitle: "Host Dashboard",
+      headerSubtitle: "Manage your gigs and find workers",
+      status: "12 workers online near you",
+      nearbyWorkers: [
+        { name: "Jomar S.", left: "22%", top: "28%" },
+        { name: "Liza C.", left: "58%", top: "60%" },
+        { name: "Ric D.", left: "78%", top: "24%" },
+      ],
+      gigs: [
+        {
+          title: "Fix a leaky faucet",
+          statusLabel: "Looking for a worker",
+          statusColor: "gold",
+          meta: "Plumbing · $35 · 0/1 workers · 2h ago",
+          sub: "3 interested workers waiting for your review",
+          applicants: 3,
+        },
+        {
+          title: "Weekend yard clean-up",
+          statusLabel: "Underway",
+          statusColor: "green",
+          meta: "Yard work · $40 · 1/1 workers · 1d ago",
+          sub: "Liza's on the way",
+        },
+        {
+          title: "Repaint the gate",
+          statusLabel: "All done",
+          statusColor: "gray",
+          meta: "Painting · $60 · 1/1 workers · 3d ago",
+          sub: "Completed · $60 paid",
+        },
+      ],
+    },
   },
 } as const;
+
+export const openGigPostExample = {
+  title: "Weekend yard clean-up",
+  description: "Need someone to mow the lawn, trim the hedges, and bag the clippings.",
+  skill: "Yard Work",
+  experience: "Entry Level",
+  experienceSub: "No prior experience needed",
+  amount: "$40",
+  workers: 1,
+  date: "Sat, Aug 16",
+  time: "10:00 AM",
+  location: "San Francisco, California",
+  locationSub: "Current GPS location",
+};
+
+export const gigTrackingExample = {
+  gigTitle: "Weekend yard clean-up",
+  workerName: "Liza C.",
+  distance: "0.6 km away",
+  stepIndex: 0,
+  stepTitle: "Liza C. is heading to your location",
+  stepBody: "Live location is shared — you'll be notified the moment they arrive.",
+};
+
+export const gigCompleteExample = {
+  gigTitle: "Weekend yard clean-up",
+  workerName: "Liza C.",
+  distance: "0 km away",
+  stepIndex: 5,
+  stepTitle: "Gig complete!",
+  stepBody: "Rate Liza C. to help other hosts.",
+};
+
+export const applyGigExample = {
+  title: "Weekend yard clean-up",
+  status: "Open",
+  postedAgo: "2h ago",
+  applicantsCount: 3,
+  host: "Liza C.",
+  hostRating: "4.9",
+  pay: "$40",
+  schedule: "Sat, Aug 16 · 10:00 AM",
+  distance: "0.6 km",
+  experience: "Entry Level",
+  skills: [
+    { name: "Yard Work", have: true },
+    { name: "Lawn Mowing", have: true },
+    { name: "Heavy Lifting", have: false },
+  ],
+};
+
+export const workerProgressExample = {
+  gigTitle: "Fix a leaky faucet",
+  hostName: "Jomar S.",
+  pay: "$35",
+  distance: "0.4 km away",
+  elapsed: "18:42",
+  stepIndex: 2,
+  stepTitle: "Gig in progress",
+  stepBody: "The host will mark the gig as done when finished.",
+};
+
+export const workerCompleteExample = {
+  gigTitle: "Fix a leaky faucet",
+  hostName: "Liza C.",
+  pay: "$35",
+  distance: "0 km away",
+  elapsed: "42:10",
+  stepIndex: 5,
+  stepTitle: "All done — great work!",
+  stepBody: "This gig is complete. Rate your host below.",
+};

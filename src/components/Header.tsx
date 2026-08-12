@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
+import Link from "next/link";
 import ThemeToggle from "./ThemeToggle";
 
 export default function Header() {
@@ -13,7 +14,7 @@ export default function Header() {
       className="sticky top-0 z-50 border-b border-hairline bg-mist/80 backdrop-blur-md"
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <a href="#top" className="flex items-center">
+        <Link href="/" className="flex items-center">
           <Image
             src="/assets/giggre_logo.png"
             alt="Giggre"
@@ -22,18 +23,7 @@ export default function Header() {
             className="h-8 w-auto"
             priority
           />
-        </a>
-        <nav className="hidden items-center gap-8 text-sm text-muted md:flex">
-          <a href="#how-it-works" className="transition-colors hover:text-ink">
-            How it works
-          </a>
-          <a href="#local" className="transition-colors hover:text-ink">
-            Why hyperlocal
-          </a>
-          <a href="#download" className="transition-colors hover:text-ink">
-            Download
-          </a>
-        </nav>
+        </Link>
         <div className="flex items-center gap-3">
           <ThemeToggle />
           <a

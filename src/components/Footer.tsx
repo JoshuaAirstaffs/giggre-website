@@ -44,7 +44,7 @@ export default function Footer() {
             Company
           </p>
           <ul className="mt-3 space-y-2 text-sm text-muted">
-            <li><a href="mailto:hello@airstaffs.com" className="hover:text-ink">Contact</a></li>
+            <li><a href="/contact" className="hover:text-ink">Contact</a></li>
           </ul>
         </div>
       </div>

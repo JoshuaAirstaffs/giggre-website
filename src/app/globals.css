@@ -32,6 +32,11 @@
   --danger-tint: #FCEBEA;
   --danger-text: #A02921;
 
+  --success-start: #2E9E6B;
+  --success-end: #1F7A52;
+  --success-tint: #E7F7EF;
+  --success-text: #1F7A52;
+
   --font-display: "Space Grotesk", system-ui, sans-serif;
   --font-body: "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, monospace;
@@ -69,6 +74,11 @@
     --danger-end: #E0453F;
     --danger-tint: #3A1614;
     --danger-text: #F29A95;
+
+    --success-start: #4CC290;
+    --success-end: #2E9E6B;
+    --success-tint: #163023;
+    --success-text: #7FD9AE;
   }
 }
 
@@ -103,6 +113,11 @@
   --danger-end: #E0453F;
   --danger-tint: #3A1614;
   --danger-text: #F29A95;
+
+  --success-start: #4CC290;
+  --success-end: #2E9E6B;
+  --success-tint: #163023;
+  --success-text: #7FD9AE;
 }
 
 @theme inline {

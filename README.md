@@ -19,14 +19,14 @@ src/
     HomeClient.tsx   owns the worker/host toggle state
     Header.tsx
     Hero.tsx
-    RadarSignature.tsx   the "nearby gigs radar" animated SVG signature piece
+    DashboardMockup.tsx  phone-frame mockup of the real worker/host app dashboard
     ModeToggle.tsx       worker/host pill switch
     HowItWorks.tsx
     LocalProof.tsx
     DownloadCTA.tsx
     Footer.tsx
   lib/
-    content.ts       all copy + radar pin data for worker/host modes, edit here first
+    content.ts       all copy + dashboard mockup data for worker/host modes, edit here first
 ```
 
 ## Run locally

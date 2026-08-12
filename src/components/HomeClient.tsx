@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Mode } from "@/lib/content";
 import Header from "./Header";
 import Hero from "./Hero";
+import AppPreview from "./AppPreview";
 import HowItWorks from "./HowItWorks";
 import LocalProof from "./LocalProof";
 import DownloadCTA from "./DownloadCTA";
@@ -17,6 +18,7 @@ export default function HomeClient() {
       <Header />
       <main className="flex-1">
         <Hero mode={mode} setMode={setMode} />
+        <AppPreview mode={mode} />
         <HowItWorks mode={mode} />
         <LocalProof />
         <DownloadCTA />
