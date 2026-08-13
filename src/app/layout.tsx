@@ -27,12 +27,36 @@ const themeInitScript = `
 })();
 `;
 
+// One-time cleanup: an older version of this site registered a service worker
+// that some returning visitors still have, which serves stale cached pages
+// instead of fetching new deploys. This app doesn't use a service worker, so
+// unregister any leftover ones and clear their caches.
+const swCleanupScript = `
+(function () {
+  try {
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        regs.forEach(function (reg) { reg.unregister(); });
+      });
+    }
+    if ("caches" in window) {
+      caches.keys().then(function (keys) {
+        keys.forEach(function (key) { caches.delete(key); });
+      });
+    }
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
         <Script id="theme-init" strategy="beforeInteractive">
           {themeInitScript}
+        </Script>
+        <Script id="sw-cleanup" strategy="afterInteractive">
+          {swCleanupScript}
         </Script>
         {children}
       </body>
