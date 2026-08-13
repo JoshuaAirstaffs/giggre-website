@@ -125,8 +125,8 @@ export const modeCopy = {
   worker: {
     label: "I want to earn",
     eyebrow: "Now live in your area",
-    headline: "Find gigs near you — the distance is your call.",
-    sub: "Giggre shows you paid gigs closest first, but the choice is yours — apply down the block or across town. Get matched in minutes and paid out the same day.",
+    headline: "Find gigs near you — grow your income your way.",
+    sub: "Giggre shows you paid gigs sorted by what they pay, so you always see the best-paying work first. Get matched in minutes and paid out the same day.",
     cta: "Browse nearby gigs",
     accentTint: "var(--worker-tint)",
     accentText: "var(--worker-text)",
@@ -174,7 +174,7 @@ export const modeCopy = {
   host: {
     label: "I need help",
     eyebrow: "Now live in your area",
-    headline: "Get help from someone on your own block.",
+    headline: "Get help from someone nearby.",
     sub: "Post what you need done, set your budget, and Giggre matches you with a verified local who can start today.",
     cta: "Post a gig",
     accentTint: "var(--host-tint)",

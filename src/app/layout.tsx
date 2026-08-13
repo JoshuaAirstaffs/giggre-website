@@ -14,9 +14,6 @@ export const metadata: Metadata = {
   title: "Giggre — gigs on your block",
   description:
     "Giggre connects hosts who need a hand with workers nearby who can help — same block, same day.",
-  icons: {
-    icon: "/assets/giggre_logo.png",
-  },
 };
 
 const themeInitScript = `
