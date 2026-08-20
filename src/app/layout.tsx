@@ -9,6 +9,9 @@ import "@fontsource/inter/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "./globals.css";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { Toaster } from "@/components/ui/sonner";
+import ReduxProvider from "@/store/ReduxProvider";
 
 export const metadata: Metadata = {
   title: "Giggre — gigs on your block",
@@ -58,7 +61,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Script id="sw-cleanup" strategy="afterInteractive">
           {swCleanupScript}
         </Script>
-        {children}
+        <ReduxProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+          <Toaster position="top-center" />
+        </ReduxProvider>
       </body>
     </html>
   );
