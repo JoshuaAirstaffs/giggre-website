@@ -21,7 +21,7 @@ export default async function WorkerLayout({ children }: { children: React.React
     >
       <AppSidebar variant="inset" user={user} navItems={sidebarItems} />
       <SidebarInset>
-        <SiteHeader title={`Hello ${user.name}`} />
+        <SiteHeader title={`Hello ${user.name}`} notifications />
         <div className="flex flex-1 flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>

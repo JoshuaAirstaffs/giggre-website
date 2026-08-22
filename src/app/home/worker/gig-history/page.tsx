@@ -7,11 +7,19 @@ import JoshDiv from "@/components/DivAnimation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useAppSelector } from "@/store/hooks";
 import { useCompletedEntries } from "@/hooks/use-completed-entries";
 import { currencySymbol } from "@/lib/utils";
 import { GIG_TYPE_BADGE_CLASSES, sumAmountBetween, type CompletedEntry, type GigTypeKey } from "@/lib/earnings";
 import GigHistoryCard from "./components/GigHistoryCard";
+import CompletedGigsTrendChart from "./components/CompletedGigsTrendChart";
 
 const GIG_TYPE_COUNT_LABELS: Record<GigTypeKey, string> = {
   quick: "Quick Gigs",
@@ -42,6 +50,7 @@ function groupByMonth(entries: CompletedEntry[]) {
 }
 
 const PAGE_SIZE = 10;
+const ALL_MONTHS = "all";
 
 export default function GigHistoryPage() {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
@@ -49,14 +58,35 @@ export default function GigHistoryPage() {
   const { entries, loading, error } = useCompletedEntries(uid);
   const symbol = currencySymbol(profile?.currencyCode ?? "USD");
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [monthFilter, setMonthFilter] = useState(ALL_MONTHS);
 
   const sorted = useMemo(
     () => [...entries].sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime()),
     [entries]
   );
-  const groups = useMemo(() => groupByMonth(sorted.slice(0, visibleCount)), [sorted, visibleCount]);
+
+  const monthOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const entry of sorted) {
+      const key = monthKey(entry.completedAt);
+      if (!seen.has(key)) seen.set(key, monthLabel(entry.completedAt));
+    }
+    return Array.from(seen, ([key, label]) => ({ key, label }));
+  }, [sorted]);
+
+  const filtered = useMemo(
+    () => (monthFilter === ALL_MONTHS ? sorted : sorted.filter((e) => monthKey(e.completedAt) === monthFilter)),
+    [sorted, monthFilter]
+  );
+
+  function handleMonthFilterChange(value: string | null) {
+    setMonthFilter(value ?? ALL_MONTHS);
+    setVisibleCount(PAGE_SIZE);
+  }
+
+  const groups = useMemo(() => groupByMonth(filtered.slice(0, visibleCount)), [filtered, visibleCount]);
   const totalEarned = useMemo(() => sumAmountBetween(entries, new Date(0), null), [entries]);
-  const hasMore = visibleCount < sorted.length;
+  const hasMore = visibleCount < filtered.length;
 
   const countsByType = useMemo(() => {
     const counts: Record<GigTypeKey, number> = { quick: 0, open: 0, offered: 0 };
@@ -125,7 +155,30 @@ export default function GigHistoryPage() {
         ))}
       </div>
 
-      <div className="mt-6">
+      <CompletedGigsTrendChart entries={entries} loading={loading} error={error} />
+
+      <div className="mt-6 flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-ink">History</p>
+        {!loading && !error && monthOptions.length > 0 && (
+          <Select value={monthFilter} onValueChange={handleMonthFilterChange}>
+            <SelectTrigger size="sm">
+              <SelectValue>
+                {monthFilter === ALL_MONTHS ? "All months" : monthOptions.find((m) => m.key === monthFilter)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_MONTHS}>All months</SelectItem>
+              {monthOptions.map((option) => (
+                <SelectItem key={option.key} value={option.key}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+
+      <div className="mt-3">
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
@@ -137,8 +190,12 @@ export default function GigHistoryPage() {
         ) : groups.length === 0 ? (
           <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
             <Briefcase className="size-10 text-muted" />
-            <p className="font-medium text-ink">No completed gigs yet</p>
-            <p className="text-sm text-muted">Your finished gigs will appear here</p>
+            <p className="font-medium text-ink">
+              {sorted.length === 0 ? "No completed gigs yet" : "No gigs in this month"}
+            </p>
+            <p className="text-sm text-muted">
+              {sorted.length === 0 ? "Your finished gigs will appear here" : "Try a different month filter"}
+            </p>
           </div>
         ) : (
           <div className="space-y-6">
@@ -155,7 +212,7 @@ export default function GigHistoryPage() {
             {hasMore && (
               <div className="flex flex-col items-center gap-2 pt-2">
                 <p className="text-xs text-muted">
-                  Showing {Math.min(visibleCount, sorted.length)} of {sorted.length} gigs
+                  Showing {Math.min(visibleCount, filtered.length)} of {filtered.length} gigs
                 </p>
                 <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + PAGE_SIZE)}>
                   Load more

@@ -1,4 +1,4 @@
-import { Clock, Coins, LayoutDashboardIcon, Wrench } from "lucide-react";
+import { BriefcaseBusiness, Clock, Coins, LayoutDashboardIcon, Wrench } from "lucide-react";
 import type { NavItem } from "@/components/nav-main";
 
 export const sidebarItems: NavItem[] = [
@@ -21,5 +21,10 @@ export const sidebarItems: NavItem[] = [
     title: "My Toolchest",
     url: "/home/worker/toolchest",
     icon: <Wrench />,
+  },
+  {
+    title: "My Applications",
+    url: "/home/worker/applications",
+    icon: <BriefcaseBusiness />,
   },
 ];

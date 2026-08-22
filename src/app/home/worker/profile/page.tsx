@@ -109,7 +109,7 @@ export default function WorkerProfilePage() {
             <div>
               <p className="text-sm font-medium text-muted">About</p>
               {profile?.bio ? (
-                <p className="mt-1.5 text-sm leading-relaxed text-ink">{profile.bio}</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink whitespace-pre-line">{profile.bio}</p>
               ) : (
                 <p className="mt-1.5 text-sm text-muted">No bio yet.</p>
               )}

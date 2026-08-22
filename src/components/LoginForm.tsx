@@ -94,6 +94,18 @@ export default function LoginForm() {
         {loading ? "Signing in…" : "Continue with Google"}
       </button>
 
+      <button
+        type="button"
+        disabled
+        title="Coming soon"
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-hairline px-6 py-3 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <path d="M12.152 6.896c-.948 0-2.415-1.078-3.96-1.04-2.04.027-3.91 1.183-4.961 3.014-2.117 3.673-.546 9.632 1.539 12.786 1.023 1.542 2.238 3.271 3.834 3.211 1.529-.065 2.126-.989 3.997-.989 1.864 0 2.396.989 4.024.955 1.653-.024 2.7-1.52 3.717-3.07 1.17-1.77 1.653-3.485 1.68-3.573-.037-.014-3.222-1.24-3.255-4.914-.027-3.077 2.514-4.549 2.628-4.615-1.436-2.101-3.66-2.336-4.442-2.372-1.936-.153-3.564 1.107-4.797 1.107zm3.9-3.895c.837-.973 1.4-2.327 1.247-3.677-1.206.049-2.657.804-3.522 1.772-.776.848-1.437 2.222-1.256 3.535 1.315.101 2.673-.657 3.531-1.63z" />
+        </svg>
+        Continue with Apple
+      </button>
+
       <div className="flex items-center gap-3">
         <span className="h-px flex-1 bg-[var(--hairline)]" aria-hidden />
         <span className="text-xs text-muted">or</span>

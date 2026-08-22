@@ -37,7 +37,7 @@ export default function HostProfilePage() {
             <div>
               <CardTitle className="text-lg">{name || "Unnamed"}</CardTitle>
               <p className="text-sm text-muted">{profile?.email ?? authUser?.email}</p>
-              {profile?.bio && <p className="mt-1 text-sm text-muted">{profile.bio}</p>}
+              {profile?.bio && <p className="mt-1 text-sm text-muted whitespace-pre-line">{profile.bio}</p>}
             </div>
           </div>
         </CardHeader>
