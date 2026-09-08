@@ -55,9 +55,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <Script id="theme-init" strategy="beforeInteractive">
-          {themeInitScript}
-        </Script>
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <Script id="sw-cleanup" strategy="afterInteractive">
           {swCleanupScript}
         </Script>

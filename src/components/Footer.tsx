@@ -46,6 +46,9 @@ export default function Footer() {
           <ul className="mt-3 space-y-2 text-sm text-muted">
             <li><a href="/contact" className="hover:text-ink">Contact</a></li>
           </ul>
+          <ul className="mt-3 space-y-2 text-sm text-muted">
+            <li><a href="/apply" className="hover:text-ink">Apply for a job</a></li>
+          </ul>
         </div>
       </div>
       <p className="mx-auto mt-10 max-w-6xl font-[var(--font-mono)] text-xs text-muted">
