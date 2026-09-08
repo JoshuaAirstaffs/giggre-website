@@ -1,5 +1,5 @@
 import { initializeApp, getApps, getApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, OAuthProvider } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
@@ -38,3 +38,13 @@ export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope("email");
 googleProvider.addScope("profile");
 googleProvider.setCustomParameters({ prompt: "select_account" });
+
+// Requires "Sign in with Apple" to be enabled under Firebase Console >
+// Authentication > Sign-in method, with a registered Services ID, Team ID,
+// Key ID, and private key from the Apple Developer portal, plus this
+// domain added to the Services ID's authorized return URLs — without that
+// configuration, signInWithPopup(auth, appleProvider) will fail at runtime
+// even though this client code is otherwise complete.
+export const appleProvider = new OAuthProvider("apple.com");
+appleProvider.addScope("email");
+appleProvider.addScope("name");

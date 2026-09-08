@@ -7,10 +7,11 @@ import {
   createUserWithEmailAndPassword,
   signInWithPopup,
   updateProfile,
+  type AuthProvider,
   type User,
 } from "firebase/auth";
 import { toast } from "sonner";
-import { auth, googleProvider } from "@/lib/firebase";
+import { auth, appleProvider, googleProvider } from "@/lib/firebase";
 import PasswordInput from "@/components/PasswordInput";
 import {
   COUNTRIES,
@@ -51,7 +52,7 @@ function authErrorMessage(err: unknown): string | null {
     case "auth/email-already-in-use":
       return "This email is already registered. Try logging in instead.";
     case "auth/account-exists-with-different-credential":
-      return "This email is linked to a Google account. Log in with Google instead.";
+      return "This email is already linked to a different sign-in method. Log in with that method instead.";
     case "auth/invalid-email":
       return "Please enter a valid email address.";
     case "auth/weak-password":
@@ -176,10 +177,13 @@ export default function RegisterForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Once a brand-new Google sign-in has no profile yet, we drop into this
-  // mode: collect name/phone/referral before letting them into the app —
-  // mirrors the app's CompleteProfileScreen so no one ends up half-registered.
-  const [pendingGoogleUser, setPendingGoogleUser] = useState<User | null>(null);
+  // Once a brand-new OAuth sign-in (Google or Apple) has no profile yet, we
+  // drop into this mode: collect name/phone/referral before letting them
+  // into the app — mirrors the app's CompleteProfileScreen so no one ends up
+  // half-registered. pendingOAuthProvider tracks which provider they came
+  // through so the eventual createUserProfile call records it accurately.
+  const [pendingOAuthUser, setPendingOAuthUser] = useState<User | null>(null);
+  const [pendingOAuthProvider, setPendingOAuthProvider] = useState<"google" | "apple">("google");
 
   async function finishAndRedirect(user: User, successMessage: string) {
     const idToken = await user.getIdToken();
@@ -189,12 +193,12 @@ export default function RegisterForm() {
     router.refresh();
   }
 
-  async function handleGoogle() {
+  async function handleOAuthSignIn(provider: AuthProvider, providerName: "google" | "apple") {
     if (loading) return;
     setLoading(true);
     setError(null);
     try {
-      const credential = await signInWithPopup(auth, googleProvider);
+      const credential = await signInWithPopup(auth, provider);
       const existing = await getUserProfile(credential.user.uid);
       if (existing?.phone) {
         // Already fully registered — just continue in.
@@ -202,7 +206,8 @@ export default function RegisterForm() {
         return;
       }
       setName(credential.user.displayName ?? "");
-      setPendingGoogleUser(credential.user);
+      setPendingOAuthProvider(providerName);
+      setPendingOAuthUser(credential.user);
     } catch (err) {
       const message = authErrorMessage(err);
       if (message) {
@@ -212,6 +217,14 @@ export default function RegisterForm() {
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleGoogle() {
+    handleOAuthSignIn(googleProvider, "google");
+  }
+
+  function handleApple() {
+    handleOAuthSignIn(appleProvider, "apple");
   }
 
   async function handleEmailSubmit(e: React.FormEvent) {
@@ -283,9 +296,9 @@ export default function RegisterForm() {
     }
   }
 
-  async function handleCompleteGoogleProfile(e: React.FormEvent) {
+  async function handleCompleteOAuthProfile(e: React.FormEvent) {
     e.preventDefault();
-    if (loading || !pendingGoogleUser) return;
+    if (loading || !pendingOAuthUser) return;
     setError(null);
 
     if (!name.trim() || !phone.trim()) {
@@ -305,25 +318,25 @@ export default function RegisterForm() {
 
     setLoading(true);
     try {
-      await updateProfile(pendingGoogleUser, { displayName: name.trim() });
+      await updateProfile(pendingOAuthUser, { displayName: name.trim() });
       const userId = await generateUserId();
       await createUserProfile({
-        uid: pendingGoogleUser.uid,
+        uid: pendingOAuthUser.uid,
         userId,
-        email: pendingGoogleUser.email ?? "",
+        email: pendingOAuthUser.email ?? "",
         name: name.trim(),
         phone: fullPhone,
-        photoUrl: pendingGoogleUser.photoURL ?? undefined,
-        signInMethod: "google",
+        photoUrl: pendingOAuthUser.photoURL ?? undefined,
+        signInMethod: pendingOAuthProvider,
         referrer,
         referralCodeUsed: referralCode.trim().toUpperCase() || undefined,
       });
-      await finishAndRedirect(pendingGoogleUser, "Account created");
+      await finishAndRedirect(pendingOAuthUser, "Account created");
     } catch {
       // Firestore write failed — sign out so no one is left authenticated
       // without a profile record, matching the app's cleanup behavior.
       await auth.signOut();
-      setPendingGoogleUser(null);
+      setPendingOAuthUser(null);
       const message = "Account setup failed. Please sign in again.";
       setError(message);
       toast.error(message);
@@ -332,11 +345,11 @@ export default function RegisterForm() {
     }
   }
 
-  if (pendingGoogleUser) {
+  if (pendingOAuthUser) {
     return (
-      <form className="mt-8 space-y-5" onSubmit={handleCompleteGoogleProfile}>
+      <form className="mt-8 space-y-5" onSubmit={handleCompleteOAuthProfile}>
         <p className="text-sm text-muted">
-          Just a few more details to finish setting up {pendingGoogleUser.email}.
+          Just a few more details to finish setting up {pendingOAuthUser.email}.
         </p>
 
         <div>
@@ -390,12 +403,12 @@ export default function RegisterForm() {
 
       <button
         type="button"
-        disabled
-        title="Coming soon"
-        className="flex w-full items-center justify-center gap-2 rounded-full border border-hairline px-6 py-3 text-sm font-medium text-ink disabled:cursor-not-allowed disabled:opacity-40"
+        onClick={handleApple}
+        disabled={loading}
+        className="flex w-full items-center justify-center gap-2 rounded-full border border-hairline px-6 py-3 text-sm font-medium text-ink transition-colors hover:bg-mist disabled:cursor-not-allowed disabled:opacity-40"
       >
         <AppleIcon />
-        Continue with Apple
+        {loading ? "Signing up…" : "Continue with Apple"}
       </button>
 
       <div className="flex items-center gap-3">

@@ -27,7 +27,7 @@ export interface UserProfile {
   updatedAt?: string;
   skills?: string[];
   skillsXP?: Record<string, number>;
-  signInMethod?: "email" | "google";
+  signInMethod?: "email" | "google" | "apple";
   ratingAsWorker?: number;
   ratingAsHost?: number;
   ratingCount?: number;

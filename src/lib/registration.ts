@@ -43,6 +43,11 @@ export const COUNTRIES = [
   { name: "Spain", flag: "🇪🇸", dialCode: "+34" },
   { name: "Netherlands", flag: "🇳🇱", dialCode: "+31" },
   { name: "New Zealand", flag: "🇳🇿", dialCode: "+64" },
+  { name: "Mexico", flag: "🇲🇽", dialCode: "+52" },
+  { name: "Brazil", flag: "🇧🇷", dialCode: "+55" },
+  { name: "South Africa", flag: "🇿🇦", dialCode: "+27" },
+  { name: "Pakistan", flag: "🇵🇰", dialCode: "+92" },
+  { name: "Bangladesh", flag: "🇧🇩", dialCode: "+880" },
 ] as const;
 
 export const DEFAULT_COUNTRY = COUNTRIES[0];
@@ -168,7 +173,7 @@ export interface NewUserProfile {
   name: string;
   phone: string;
   photoUrl?: string;
-  signInMethod: "email" | "google";
+  signInMethod: "email" | "google" | "apple";
   referrer: ReferralLookup | null;
   referralCodeUsed?: string;
 }
