@@ -26,12 +26,12 @@ export default function Header() {
         </Link>
         <div className="flex items-center gap-3">
           <ThemeToggle />
-          <Link
+          {/* <Link
             href="/login"
             className="rounded-full border border-hairline px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-mist"
           >
             Log in
-          </Link>
+          </Link> */}
           <a
             href="#download"
             className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper transition-transform hover:scale-[1.03] active:scale-[0.98]"
