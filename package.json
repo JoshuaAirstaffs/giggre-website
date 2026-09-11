@@ -6,8 +6,8 @@
     "dev": "npm run dev:dev",
     "dev:prod": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next dev",
     "dev:dev": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=dev next dev",
-    "build": "next build",
-    "start": "next start",
+    "build": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next build",
+    "start": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next start",
     "lint": "eslint"
   },
   "dependencies": {
