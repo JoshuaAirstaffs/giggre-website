@@ -4,27 +4,27 @@ import type { NavItem } from "@/components/nav-main";
 export const sidebarItems: NavItem[] = [
   {
     title: "Browse",
-    url: "/home/worker/browse",
+    url: "/app/worker/browse",
     icon: <LayoutDashboardIcon />,
   },
   {
     title: "My Earnings",
-    url: "/home/worker/earnings",
+    url: "/app/worker/earnings",
     icon: <Coins />,
   },
    {
     title: "Gig History",
-    url: "/home/worker/gig-history",
+    url: "/app/worker/gig-history",
     icon: <Clock />,
   },
    {
     title: "My Toolchest",
-    url: "/home/worker/toolchest",
+    url: "/app/worker/toolchest",
     icon: <Wrench />,
   },
   {
     title: "My Applications",
-    url: "/home/worker/applications",
+    url: "/app/worker/applications",
     icon: <BriefcaseBusiness />,
   },
 ];

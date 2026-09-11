@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { SESSION_COOKIE } from "@/lib/sessionConfig";
 
-const protectedPrefixes = ["/select-role", "/home"];
+const protectedPrefixes = ["/select-role", "/app"];
 const authRoutes = ["/login", "/register"];
 
 export function proxy(request: NextRequest) {
@@ -22,5 +22,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/select-role", "/home/:path*", "/login", "/register"],
+  matcher: ["/select-role", "/app/:path*", "/login", "/register"],
 };

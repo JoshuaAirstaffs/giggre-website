@@ -26,7 +26,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
-import { Check, EllipsisVerticalIcon, LogOutIcon, UserIcon } from "lucide-react"
+import { ArrowLeftRight, Check, EllipsisVerticalIcon, LogOutIcon, UserIcon } from "lucide-react"
 import { useAppSelector } from "@/store/hooks"
 
 export function NavUser({
@@ -40,7 +40,10 @@ export function NavUser({
   const { isMobile } = useSidebar()
   const router = useRouter()
   const pathname = usePathname()
-  const profileHref = pathname.startsWith("/home/host") ? "/home/host/profile" : "/home/worker/profile"
+  const isHost = pathname.startsWith("/app/host")
+  const profileHref = isHost ? "/app/host/profile" : "/app/worker/profile"
+  const switchHref = isHost ? "/app/worker/browse" : "/app/host/post"
+  const switchLabel = isHost ? "Switch to worker" : "Switch to host"
   const [loggingOut, setLoggingOut] = useState(false)
   const initials = user.name.slice(0, 2).toUpperCase()
   const { profile } = useAppSelector((root) => root.user)
@@ -112,6 +115,10 @@ export function NavUser({
               <DropdownMenuItem render={<Link href={profileHref} />}>
                 <UserIcon />
                 Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href={switchHref} />}>
+                <ArrowLeftRight />
+                {switchLabel}
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

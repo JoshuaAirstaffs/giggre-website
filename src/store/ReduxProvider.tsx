@@ -11,31 +11,26 @@ import { store, persistor } from "./store";
 import { useAppDispatch } from "./hooks";
 import { setAuthUser, setProfile, clearUser, type UserProfile } from "./userSlice";
 
+// Firestore Timestamps and GeoPoints aren't plain-serializable, so Redux
+// flags any that slip into a dispatched action. Rather than whitelisting the
+// specific fields we know about (createdAt, location, earnings.updatedAt...),
+// walk the whole doc and convert every instance wherever it appears — this
+// also covers fields stamped by admin/App-Check tooling outside this app
+// (e.g. a top-level `debugTokenCheckedAt`) that we'd otherwise miss one at a
+// time as they show up.
+function sanitizeValue(value: unknown): unknown {
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (value instanceof GeoPoint) return { latitude: value.latitude, longitude: value.longitude };
+  if (Array.isArray(value)) return value.map(sanitizeValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, sanitizeValue(v)]));
+  }
+  return value;
+}
+
 function sanitizeProfile(data: Record<string, unknown> | null): UserProfile | null {
   if (!data) return null;
-  const { createdAt, updatedAt, location, earnings, ...rest } = data;
-  const earningsData = earnings as Record<string, unknown> | undefined;
-  return {
-    ...rest,
-    createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : undefined,
-    // Some fields (e.g. a top-level `updatedAt` stamped by admin tooling
-    // outside this app) can be raw Firestore Timestamps we don't otherwise
-    // account for — Redux flags those as non-serializable, so normalize here.
-    updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : undefined,
-    location:
-      location instanceof GeoPoint
-        ? { latitude: location.latitude, longitude: location.longitude }
-        : undefined,
-    earnings: earningsData
-      ? {
-          ...earningsData,
-          updatedAt:
-            earningsData.updatedAt instanceof Timestamp
-              ? earningsData.updatedAt.toDate().toISOString()
-              : undefined,
-        }
-      : undefined,
-  };
+  return sanitizeValue(data) as UserProfile;
 }
 
 function FirebaseAuthListener() {

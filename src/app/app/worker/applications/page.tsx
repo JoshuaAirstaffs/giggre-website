@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Briefcase, Calendar, Check, Clock, MapPin } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
+import WorkingTimer from "@/components/WorkingTimer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -178,7 +179,8 @@ export default function MyApplicationsPage() {
             <p className="text-sm text-muted">Gigs you apply to on the Browse page will show up here</p>
             <Button
               className="mt-3 bg-worker text-white hover:bg-(--worker-end)"
-              render={<Link href="/home/worker/browse" />}
+              render={<Link href="/app/worker/browse" />}
+              nativeButton={false}
             >
               Browse open gigs
             </Button>
@@ -207,8 +209,13 @@ export default function MyApplicationsPage() {
                         <span className="shrink-0 text-sm font-semibold text-ink">{salary(app.currencyCode, app.budget)}/day</span>
                       </div>
 
-                      <div className="overflow-x-auto pb-1">
-                        <GigProgressSteps status={app.status} />
+                      <div className="flex items-center gap-2">
+                        <div className="overflow-x-auto pb-1">
+                          <GigProgressSteps status={app.status} />
+                        </div>
+                        {app.status === "working" && app.workStartedAt && (
+                          <WorkingTimer startedAt={app.workStartedAt} />
+                        )}
                       </div>
 
                       <div className="space-y-1.5">

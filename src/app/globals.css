@@ -270,3 +270,32 @@ body {
     clip-path: none;
   }
 }
+
+/* A worker row on the host's gig detail page, right after its status just
+   changed (see the status-diff effect in the [gigType]/[id] page) — a glow
+   that washes over the row twice then settles, so a host watching the page
+   notices the update instead of just finding the badge different later. */
+@keyframes worker-status-glow {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--worker-end) 45%, transparent);
+    background-color: color-mix(in srgb, var(--worker-end) 12%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px color-mix(in srgb, var(--worker-end) 0%, transparent);
+    background-color: transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--worker-end) 0%, transparent);
+    background-color: transparent;
+  }
+}
+
+.worker-status-glow {
+  animation: worker-status-glow 1.2s ease-out 2;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .worker-status-glow {
+    animation: none;
+  }
+}

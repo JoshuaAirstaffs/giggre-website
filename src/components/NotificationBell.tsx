@@ -26,7 +26,7 @@ function timeAgo(date: Date) {
 
 export default function NotificationBell() {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
-  const { notifications, recentCount, loading, error } = useNotifications(uid);
+  const { notifications, readIds, markAsRead, markAllAsRead, unreadCount, loading, error } = useNotifications(uid);
 
   return (
     <DropdownMenu>
@@ -40,15 +40,28 @@ export default function NotificationBell() {
         }
       >
         <Bell className="size-4" />
-        {recentCount > 0 && (
+        {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
-            {recentCount > 9 ? "9+" : recentCount}
+            {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent className="w-80" align="end" sideOffset={8}>
-        <DropdownMenuGroup>
-          <DropdownMenuLabel>Notifications</DropdownMenuLabel>
+      <DropdownMenuContent
+        className="w-80 max-h-[calc(var(--available-height)*0.6)]"
+        align="end"
+        sideOffset={8}
+      >
+        <DropdownMenuGroup className="flex items-center justify-between gap-2 pr-1">
+          <DropdownMenuLabel className="p-0">Notifications</DropdownMenuLabel>
+          {unreadCount > 0 && (
+            <button
+              type="button"
+              onClick={markAllAsRead}
+              className="text-xs font-medium text-worker hover:underline"
+            >
+              Mark all read
+            </button>
+          )}
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {loading ? (
@@ -59,15 +72,32 @@ export default function NotificationBell() {
           <p className="px-1.5 py-3 text-center text-sm text-muted-foreground">No notifications yet</p>
         ) : (
           <DropdownMenuGroup>
-            {notifications.map((notification) => (
-              <DropdownMenuItem key={notification.id} className="flex-col items-start gap-0.5 py-2">
-                <span className="truncate font-medium text-ink">{notification.title}</span>
-                {notification.body && (
-                  <p className="line-clamp-2 text-xs text-muted-foreground">{notification.body}</p>
-                )}
-                <p className="text-[11px] text-muted-foreground">{timeAgo(notification.createdAt)}</p>
-              </DropdownMenuItem>
-            ))}
+            {notifications.map((notification) => {
+              const unread = !readIds.has(notification.id);
+              return (
+                <DropdownMenuItem
+                  key={notification.id}
+                  closeOnClick={false}
+                  onClick={() => markAsRead(notification.id)}
+                  className={`flex-col items-start gap-0.5 py-2 ${unread ? "bg-(--worker-tint)/50" : ""}`}
+                >
+                  <span className="flex w-full items-center gap-1.5">
+                    {unread && <span className="size-1.5 shrink-0 rounded-full bg-worker" aria-hidden />}
+                    <span className={`truncate ${unread ? "font-semibold text-ink" : "font-medium text-muted-foreground"}`}>
+                      {notification.title}
+                    </span>
+                  </span>
+                  {notification.body && (
+                    <p
+                      className={`line-clamp-2 text-xs ${unread ? "pl-3 text-muted-foreground" : "pl-3 text-muted-foreground/70"}`}
+                    >
+                      {notification.body}
+                    </p>
+                  )}
+                  <p className="pl-3 text-[11px] text-muted-foreground">{timeAgo(notification.createdAt)}</p>
+                </DropdownMenuItem>
+              );
+            })}
           </DropdownMenuGroup>
         )}
       </DropdownMenuContent>

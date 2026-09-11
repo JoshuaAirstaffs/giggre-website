@@ -211,6 +211,9 @@ export interface AcceptedApplication {
   // (true) or directly on the open_gigs/{gigId} doc itself (false) — needed
   // to know which document a cancellation request should target.
   isMultiWorker: boolean;
+  // Set when status flips to 'working' (see _startWork in working_ui.dart) —
+  // the live duration timer is just `now - workStartedAt`, ticked locally.
+  workStartedAt: Date | null;
 }
 
 // A gig this worker applied to that a host has since accepted — the
@@ -246,6 +249,7 @@ export function subscribeAcceptedApplications(
           status: (data.status as string) ?? "",
           scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
           isMultiWorker: false,
+          workStartedAt: (data.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
         };
       });
       singleReady = true;
@@ -279,6 +283,7 @@ export function subscribeAcceptedApplications(
             status: (slot.status as string) ?? "",
             scheduledDate: (gigData.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
             isMultiWorker: true,
+            workStartedAt: (slot.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
           };
           return app;
         })

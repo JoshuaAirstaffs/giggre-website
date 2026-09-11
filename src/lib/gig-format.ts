@@ -46,3 +46,14 @@ export function initialsOf(name?: string) {
   if (!name) return "?";
   return name.trim().charAt(0).toUpperCase();
 }
+
+// MM:SS, escalating to H:MM:SS once past an hour — same format as _fmt in
+// the app's working_ui.dart.
+export function formatElapsed(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
+}

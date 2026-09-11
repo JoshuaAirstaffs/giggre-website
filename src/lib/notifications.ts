@@ -6,11 +6,18 @@ import { db } from "@/lib/firebase";
 // Docs only carry `userId` / `category` / `message` / `createdAt`; there's no
 // `title` field, so the title is derived from `category` (and `request_status`
 // for request-type categories), same as _WorkerNotificationsSheetState._activities.
-const NOTIFICATIONS_LIMIT = 20;
+const NOTIFICATIONS_DISPLAY_LIMIT = 20;
 
-// Matches the Flutter sheet's kAccountWindow — account notifications older
-// than this aren't counted as "recent" for the header badge.
-const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+// The Firestore query itself asks for far more than what's displayed —
+// `where(userId==uid)` has no `orderBy` (avoiding a composite index, per the
+// note below), so once an account has more matching docs than the query's
+// `limit()`, Firestore does NOT guarantee the returned subset is the most
+// recent ones — a brand-new notification could silently fall outside a
+// small limit and never surface. Querying a generous ceiling here, then
+// sorting client-side and slicing down to NOTIFICATIONS_DISPLAY_LIMIT,
+// means a new notification (always the most recent by createdAt) is
+// essentially guaranteed to be included and always sorts first.
+const NOTIFICATIONS_FETCH_LIMIT = 300;
 
 const REQUEST_STATUS_TITLES: Record<string, Record<string, string>> = {
   verification_requests: {
@@ -43,14 +50,15 @@ export interface NotificationEntry {
 // host approving a request) should show up in the bell without a reload.
 // No orderBy here on purpose — the Firestore query only filters by userId
 // (matching the Flutter sheet), then sorts client-side, avoiding the need
-// for a composite index on (userId, createdAt).
+// for a composite index on (userId, createdAt). See NOTIFICATIONS_FETCH_LIMIT
+// above for why the query limit itself is much bigger than what's displayed.
 export function subscribeNotifications(
   uid: string,
   onData: (notifications: NotificationEntry[]) => void,
   onError: (err: unknown) => void
 ): Unsubscribe {
   return onSnapshot(
-    query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_LIMIT)),
+    query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_FETCH_LIMIT)),
     (snap) => {
       const entries = snap.docs.map((d) => {
         const data = d.data();
@@ -64,12 +72,9 @@ export function subscribeNotifications(
           createdAt: createdAt?.toDate() ?? new Date(),
         };
       });
-      onData(entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+      entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      onData(entries.slice(0, NOTIFICATIONS_DISPLAY_LIMIT));
     },
     onError
   );
-}
-
-export function isRecent(date: Date) {
-  return Date.now() - date.getTime() <= RECENT_WINDOW_MS;
 }

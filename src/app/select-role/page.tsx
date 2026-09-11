@@ -21,7 +21,7 @@ export default async function SelectRolePage() {
         </p>
 
         <div className="mt-10 grid gap-5 sm:grid-cols-2">
-          <Link href="/home/worker" className="group block">
+          <Link href="/app/worker" className="group block">
             <Card className="h-full transition-transform group-hover:-translate-y-0.5 group-hover:shadow-md">
               <CardHeader>
                 <span
@@ -41,7 +41,7 @@ export default async function SelectRolePage() {
             </Card>
           </Link>
 
-          <Link href="/home/host" className="group block">
+          <Link href="/app/host" className="group block">
             <Card className="h-full transition-transform group-hover:-translate-y-0.5 group-hover:shadow-md">
               <CardHeader>
                 <span

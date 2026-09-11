@@ -22,7 +22,7 @@ export default async function HostLayout({ children }: { children: React.ReactNo
     >
       <AppSidebar variant="inset" user={user} navItems={sidebarItems} />
       <SidebarInset>
-        <SiteHeader title="Host home" />
+        <SiteHeader title="Host home" notifications />
         <div className="flex flex-1 flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>
