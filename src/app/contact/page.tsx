@@ -45,8 +45,8 @@ export default function ContactPage() {
             </span>
             <p className="text-sm text-muted">
               Prefer email? Reach us directly at{" "}
-              <a href="mailto:support@airstaffs.com" className="font-medium text-ink underline">
-                support@airstaffs.com
+              <a href="mailto:support@giggre.com" className="font-medium text-ink underline">
+                support@giggre.com
               </a>
               .
             </p>

@@ -7,6 +7,24 @@ function formatDate(date: Date) {
   return date.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 }
 
+// Some content items come through still carrying literal JSON string-escape
+// sequences (two characters each, e.g. "\" + "n", "\" + '"') baked into the
+// stored text — e.g. a JSON-encoded string value pasted in as-is instead of
+// its decoded content — rather than the real characters they represent. The
+// `whitespace-pre-line` below only respects actual newlines, so a literal
+// "\n" would otherwise render as visible backslash-n text instead of a line
+// break, and a literal \" shows as a backslash before every quote.
+// Normalizing here fixes it regardless of what produced it. Order matters:
+// the collapsed backslash-backslash pass must run last, so it doesn't eat
+// the backslash that's still part of an as-yet-unprocessed \n/\t/\" above it.
+function normalizeBody(body: string) {
+  return body
+    .replace(/\\r\\n|\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
 export default function LegalContent({
   badgeLabel,
   badgeIcon,
@@ -79,7 +97,7 @@ export default function LegalContent({
                     {item.title}
                   </h2>
                   <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-muted">
-                    {item.body}
+                    {normalizeBody(item.body)}
                   </p>
                 </div>
               </div>
@@ -106,8 +124,8 @@ export default function LegalContent({
         </span>
         <p className="text-sm text-muted">
           {contactBlurb}{" "}
-          <a href="mailto:support@airstaffs.com" className="font-medium text-ink underline">
-            support@airstaffs.com
+          <a href="mailto:support@giggre.com" className="font-medium text-ink underline">
+            support@giggre.com
           </a>
           .
         </p>
