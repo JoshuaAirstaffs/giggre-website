@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "@/store/hooks";
 import { postQuickGig } from "@/lib/post-gig";
+import { startAutoSearch } from "@/lib/quick-gig-matching";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 
@@ -15,6 +16,14 @@ import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 // dispatched worker declines and it resumes searching), so none of these are
 // final on their own.
 const QUICK_GIG_SEARCHING_STATUSES = ["scanning", "in_progress", "partially_filled"];
+
+// A worker accepting a single-slot quick gig moves it straight to
+// "navigating" (then "arrived"/"working"/"completed" as the job progresses)
+// — quick_gig_matching_service.dart only ever writes "filled" for a
+// multi-slot gig once filledSlotCount reaches workerSlots. Checking for
+// "filled" alone wrongly treated every accepted single-slot gig as
+// unmatched.
+const QUICK_GIG_SUCCESS_STATUSES = ["navigating", "arrived", "working", "completed", "filled"];
 
 // The engine's own default search_timeout_minutes (quick_gig_matching_service.dart's
 // _defaultSearchTimeoutMinutes) — but that engine only ever runs inside the
@@ -120,7 +129,7 @@ export default function QuickGigForm() {
       (data?.workerSlots as number | undefined) ?? 1,
       (data?.filledSlotCount as number | undefined) ?? 0
     );
-    if (status === "filled") {
+    if (status && QUICK_GIG_SUCCESS_STATUSES.includes(status)) {
       toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right" });
     } else {
       toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right" });
@@ -173,7 +182,7 @@ export default function QuickGigForm() {
         });
         return;
       }
-      if (status === "filled") {
+      if (status && QUICK_GIG_SUCCESS_STATUSES.includes(status)) {
         toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right" });
       } else {
         toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right" });
@@ -204,6 +213,14 @@ export default function QuickGigForm() {
       });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
+      // No server-side dispatch exists yet (quick_gig_matching_service.dart
+      // only runs client-side) — run the same search loop here so this tab
+      // is the one that dispatches to nearby workers, same as the app does
+      // for whichever device posts the gig. Fire-and-forget: watchQuickGigSearch
+      // already reflects its progress via the gig's own Firestore status.
+      startAutoSearch(gigId, fields.location!).catch((err) =>
+        console.error("Quick gig auto-search failed:", err)
+      );
       watchQuickGigSearch(gigId, fields.title.trim(), Number(fields.workerSlots));
       reset();
     } catch (err) {
