@@ -27,6 +27,12 @@ const FILTERS: { key: FilterKey; label: string; activeClass: string }[] = [
   { key: "offered", label: "Offered", activeClass: "data-active:bg-(--offered-start) data-active:text-white" },
 ];
 
+// Statuses the "Open" stat tile counts as still active/unresolved — a
+// filled open_gig has its slots staffed but hasn't necessarily started or
+// finished the actual work yet, so it stays in this bucket alongside a gig
+// that's still awaiting applicants.
+const OPEN_CARD_STATUSES = new Set(["open", "filled"]);
+
 function formatStatus(status: string) {
   return capitalize(status.replace(/_/g, " "));
 }
@@ -98,10 +104,11 @@ export default function MyGigsPage() {
     return c;
   }, [gigs]);
 
-  // "open" here is the gig's own status (open_gigs still awaiting an
-  // applicant) — distinct from the "Open" tab above, which is the gig TYPE
-  // and includes open_gigs that have since been filled/cancelled/etc.
-  const openGigsCount = useMemo(() => gigs.filter((gig) => gig.status === "open").length, [gigs]);
+  // "open"/"filled" here are the gig's own status (open_gigs still awaiting
+  // an applicant, or already fully staffed) — distinct from the "Open" tab
+  // above, which is the gig TYPE and includes open_gigs that have since been
+  // completed/cancelled/etc.
+  const openGigsCount = useMemo(() => gigs.filter((gig) => OPEN_CARD_STATUSES.has(gig.status)).length, [gigs]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -109,7 +116,7 @@ export default function MyGigsPage() {
       (gig) =>
         (filter === "all" || gig.gigType === filter) &&
         (!query || gig.title.toLowerCase().includes(query)) &&
-        (!openOnly || gig.status === "open")
+        (!openOnly || OPEN_CARD_STATUSES.has(gig.status))
     );
   }, [gigs, filter, search, openOnly]);
 

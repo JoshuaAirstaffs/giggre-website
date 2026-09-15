@@ -256,9 +256,6 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
   }, [gig]);
 
   const navigatingWorkers = gig?.workers.filter((w) => w.status === "navigating" && w.workerLocation) ?? [];
-  const ratedWorkers = gig?.workers.filter((w) => w.ratingCount > 0) ?? [];
-  const avgWorkerRating =
-    ratedWorkers.length > 0 ? ratedWorkers.reduce((sum, w) => sum + w.ratingAsWorker, 0) / ratedWorkers.length : null;
 
   return (
     <JoshDiv>
@@ -302,15 +299,10 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             <StatTile icon={Users} label="Workers" value={`${gig.filledSlotCount} / ${gig.workerSlots}`} />
             <StatTile icon={Wallet} label="Rate / worker" value={salary(gig.currencyCode, gig.ratePerSlot)} />
             <StatTile icon={Banknote} label="Total budget" value={salary(gig.currencyCode, gig.budget)} />
-            <StatTile
-              icon={Star}
-              label="Avg rating"
-              value={avgWorkerRating !== null ? `${avgWorkerRating.toFixed(1)} ★` : "—"}
-            />
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-5">
