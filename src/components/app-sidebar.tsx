@@ -2,8 +2,9 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
-import { NavMain, type NavItem } from "@/components/nav-main"
+import { NavMain, findActiveUrl, type NavItem } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
 import {
   Sidebar,
@@ -28,13 +29,20 @@ import { useAppSelector } from "@/store/hooks"
 export function AppSidebar({
   user,
   navItems,
+  sharedItems,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   user: { name: string; email: string }
   navItems: NavItem[]
+  sharedItems?: NavItem[]
 }) {
   const { profile } = useAppSelector((root) => root.user)
   const isVerified = profile?.isVerified === "verified"
+  const pathname = usePathname()
+  // Computed once across both groups combined so a shared-page URL (e.g.
+  // /app/host/settings) doesn't also leave a role item (e.g. "Dashboard" at
+  // /app/host, a prefix of every host route) highlighted at the same time.
+  const activeUrl = findActiveUrl([...navItems, ...(sharedItems ?? [])], pathname)
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -52,7 +60,10 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={navItems} />
+        <NavMain items={navItems} activeUrl={activeUrl} />
+        {sharedItems && sharedItems.length > 0 && (
+          <NavMain items={sharedItems} label="General" activeUrl={activeUrl} />
+        )}
       </SidebarContent>
       <SidebarFooter>
         {/* {!isVerified && (

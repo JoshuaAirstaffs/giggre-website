@@ -34,13 +34,23 @@ function initials(name: string) {
   return name.trim().slice(0, 2).toUpperCase() || "?";
 }
 
-export default function OfferedGigForm() {
+interface OfferedGigFormProps {
+  preselectedWorker?: WorkerLookupResult | null;
+}
+
+export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProps) {
   const { authUser, profile } = useAppSelector((root) => root.user);
   const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, getScheduledDate, currencyCode } = useCommonGigFields();
   const [skills, setSkills] = useState<string[]>([]);
   const [skillRequired, setSkillRequired] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
-  const [selectedWorkers, setSelectedWorkers] = useState<WorkerLookupResult[]>([]);
+  // Arriving via the Favorites page's "Quick Offer" button — the parent page
+  // keys this component by the resolved worker's uid (see post/page.tsx), so
+  // by the time this instance mounts with a non-null preselectedWorker,
+  // seeding it here directly is enough; no need to sync it in via an effect.
+  const [selectedWorkers, setSelectedWorkers] = useState<WorkerLookupResult[]>(() =>
+    preselectedWorker ? [preselectedWorker] : []
+  );
   const [submitting, setSubmitting] = useState(false);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
 

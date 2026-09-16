@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Briefcase, ChevronLeft, ChevronRight, Eye, Megaphone, Search } from "lucide-react";
+import { Briefcase, ChevronLeft, ChevronRight, Eye, Megaphone, Plus, Search } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAppSelector } from "@/store/hooks";
 import { capitalize, formatSchedule, salary } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
-import { fetchHostGigs, type HostGig } from "@/lib/host-gigs";
+import { fetchHostGigs, OPEN_CARD_STATUSES, type HostGig } from "@/lib/host-gigs";
 
 const PAGE_SIZE = 10;
 type FilterKey = "all" | GigTypeKey;
@@ -26,12 +26,6 @@ const FILTERS: { key: FilterKey; label: string; activeClass: string }[] = [
   { key: "open", label: "Open", activeClass: "data-active:bg-worker data-active:text-white" },
   { key: "offered", label: "Offered", activeClass: "data-active:bg-(--offered-start) data-active:text-white" },
 ];
-
-// Statuses the "Open" stat tile counts as still active/unresolved — a
-// filled open_gig has its slots staffed but hasn't necessarily started or
-// finished the actual work yet, so it stays in this bucket alongside a gig
-// that's still awaiting applicants.
-const OPEN_CARD_STATUSES = new Set(["open", "filled"]);
 
 function formatStatus(status: string) {
   return capitalize(status.replace(/_/g, " "));
@@ -140,7 +134,17 @@ export default function MyGigsPage() {
 
   return (
     <JoshDiv>
-      <TitlePage title="My Gigs" description="Every gig you've posted, latest first" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <TitlePage title="My Gigs" description="Every gig you've posted, latest first" />
+        <Button
+          className="gap-1.5 bg-worker text-white hover:bg-(--worker-end)"
+          render={<Link href="/app/host/my-gigs/post" />}
+          nativeButton={false}
+        >
+          <Plus className="size-4" />
+          Post a Gig
+        </Button>
+      </div>
 
       <button type="button" onClick={toggleOpenOnly} className="mt-6 block w-full text-left sm:w-64">
         <Card className={`px-6 py-5 transition-colors ${openOnly ? "border-worker ring-1 ring-worker" : ""}`}>

@@ -42,7 +42,7 @@ export function NavUser({
   const pathname = usePathname()
   const isHost = pathname.startsWith("/app/host")
   const profileHref = isHost ? "/app/host/profile" : "/app/worker/profile"
-  const switchHref = isHost ? "/app/worker/browse" : "/app/host/post"
+  const switchHref = isHost ? "/app/worker/browse" : "/app/host"
   const switchLabel = isHost ? "Switch to worker" : "Switch to host"
   const [loggingOut, setLoggingOut] = useState(false)
   const initials = user.name.slice(0, 2).toUpperCase()

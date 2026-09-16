@@ -8,21 +8,21 @@ import { startOfWeek, type CompletedEntry } from "@/lib/earnings";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "@/components/ui/chart";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 
+// Same weekly/monthly bar-chart pattern as the worker's WeeklyEarningsCard
+// (src/app/app/worker/earnings/components/WeeklyEarningsCard.tsx), just
+// "spend" (what this host has paid out) instead of "earnings", and colored
+// with the host accent instead of the worker one.
 type View = "week" | "month";
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
 const chartConfig: ChartConfig = {
-  earnings: {
-    label: "Earnings",
-    color: "var(--worker-start)",
+  spend: {
+    label: "Spend",
+    color: "var(--host-start)",
   },
 };
 
@@ -40,21 +40,32 @@ function formatMonthLabel(monthStart: Date, monthOffset: number) {
   return monthStart.toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
-interface WeeklyEarningsCardProps {
+interface SpendChartCardProps {
   entries: CompletedEntry[];
   loading: boolean;
   error: string | null;
-  currency: string | null;
 }
 
-export default function WeeklyEarningsCard({ entries, loading, error, currency }: WeeklyEarningsCardProps) {
+export default function SpendChartCard({ entries, loading, error }: SpendChartCardProps) {
   const [view, setView] = useState<View>("week");
   const [weekOffset, setWeekOffset] = useState(0);
   const [monthOffset, setMonthOffset] = useState(0);
+  const [selectedCurrency, setSelectedCurrency] = useState<string | null>(null);
+
+  const currencies = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.currencyCode))).sort(),
+    [entries],
+  );
+
+  // Gigs are usually all paid in the host's one currency, but a host can run
+  // gigs priced in more than one — mixing those into a single total would be
+  // meaningless, so default to (and let the host pick) a single currency at
+  // a time instead of summing across currencies.
+  const activeCurrency = selectedCurrency && currencies.includes(selectedCurrency) ? selectedCurrency : currencies[0];
 
   const filteredEntries = useMemo(
-    () => (currency ? entries.filter((e) => e.currencyCode === currency) : entries),
-    [entries, currency],
+    () => (activeCurrency ? entries.filter((e) => e.currencyCode === activeCurrency) : entries),
+    [entries, activeCurrency],
   );
 
   const weekStart = useMemo(() => {
@@ -84,7 +95,7 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
     }
 
     return {
-      chartData: DAY_LABELS.map((day, i) => ({ day, earnings: dayTotals[i] })),
+      chartData: DAY_LABELS.map((day, i) => ({ day, spend: dayTotals[i] })),
       total,
     };
   }, [filteredEntries, weekStart]);
@@ -105,7 +116,7 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
     }
 
     return {
-      chartData: weekTotals.map((earnings, i) => ({ day: `Week ${i + 1}`, earnings })),
+      chartData: weekTotals.map((spend, i) => ({ day: `Week ${i + 1}`, spend })),
       total,
     };
   }, [filteredEntries, monthStart]);
@@ -126,7 +137,7 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
             <Button
               size="xs"
               variant={isWeek ? "default" : "ghost"}
-              className={isWeek ? "bg-(--worker-end) text-white hover:bg-(--worker-end)/90" : ""}
+              className={isWeek ? "bg-(--host-end) text-white hover:bg-(--host-end)/90" : ""}
               onClick={() => setView("week")}
             >
               Weekly
@@ -134,7 +145,7 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
             <Button
               size="xs"
               variant={!isWeek ? "default" : "ghost"}
-              className={!isWeek ? "bg-(--worker-end) text-white hover:bg-(--worker-end)/90" : ""}
+              className={!isWeek ? "bg-(--host-end) text-white hover:bg-(--host-end)/90" : ""}
               onClick={() => setView("month")}
             >
               Monthly
@@ -156,14 +167,30 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
             </Button>
           </div>
         </div>
-        <CardTitle className="mt-2 text-sm font-medium text-muted">
-          {isWeek ? "Weekly breakdown" : "Monthly breakdown"}
-        </CardTitle>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="text-sm font-medium text-muted">
+            {isWeek ? "Weekly spend" : "Monthly spend"}
+          </CardTitle>
+          {currencies.length > 1 && (
+            <Select value={activeCurrency} onValueChange={setSelectedCurrency}>
+              <SelectTrigger size="sm" className="w-24">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {currencies.map((code) => (
+                  <SelectItem key={code} value={code}>
+                    {code}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
         {loading ? (
           <Skeleton className="h-8 w-32" />
         ) : (
           <div className="text-2xl font-bold text-ink">
-            {currency && currencySymbol(currency)}
+            {activeCurrency && currencySymbol(activeCurrency)}
             {total.toLocaleString()}
           </div>
         )}
@@ -179,7 +206,7 @@ export default function WeeklyEarningsCard({ entries, loading, error, currency }
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
               <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-              <Bar dataKey="earnings" fill="var(--color-earnings)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+              <Bar dataKey="spend" fill="var(--color-spend)" radius={[4, 4, 0, 0]} maxBarSize={36} />
             </BarChart>
           </ChartContainer>
         )}

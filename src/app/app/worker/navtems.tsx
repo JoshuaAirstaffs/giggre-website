@@ -1,5 +1,6 @@
 import { BriefcaseBusiness, Clock, Coins, LayoutDashboardIcon, Wrench } from "lucide-react";
 import type { NavItem } from "@/components/nav-main";
+import { sharedNavItems } from "@/components/shared-nav-items";
 
 export const sidebarItems: NavItem[] = [
   {
@@ -28,3 +29,5 @@ export const sidebarItems: NavItem[] = [
     icon: <BriefcaseBusiness />,
   },
 ];
+
+export const sharedItems: NavItem[] = sharedNavItems("/app/worker");

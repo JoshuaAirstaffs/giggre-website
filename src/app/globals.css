@@ -16,10 +16,10 @@
   --worker-tint: #E9F1FA;
   --worker-text: #1F4D80;
 
-  --host-start: #F0A830;
-  --host-end: #D88810;
-  --host-tint: #FCF1E1;
-  --host-text: #9A5F0C;
+  --host-start: #FFC933;
+  --host-end: #E0A500;
+  --host-tint: #FFF6D6;
+  --host-text: #7A5900;
 
   --quick-start: #E0B400;
   --quick-end: #B58C00;
@@ -97,10 +97,10 @@
     --worker-tint: #1B2A3D;
     --worker-text: #93C3EF;
 
-    --host-start: #F5BB55;
-    --host-end: #D88810;
-    --host-tint: #362A14;
-    --host-text: #F0C878;
+    --host-start: #FFD966;
+    --host-end: #E0A500;
+    --host-tint: #332A0A;
+    --host-text: #FFD966;
 
     --quick-start: #F0C400;
     --quick-end: #B58C00;
@@ -136,10 +136,10 @@
   --worker-tint: #1B2A3D;
   --worker-text: #93C3EF;
 
-  --host-start: #F5BB55;
-  --host-end: #D88810;
-  --host-tint: #362A14;
-  --host-text: #F0C878;
+  --host-start: #FFD966;
+  --host-end: #E0A500;
+  --host-tint: #332A0A;
+  --host-text: #FFD966;
 
   --quick-start: #F0C400;
   --quick-end: #B58C00;

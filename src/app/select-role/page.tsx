@@ -41,7 +41,7 @@ export default async function SelectRolePage() {
             </Card>
           </Link>
 
-          <Link href="/app/host" className="group block">
+          <Link href="/app/host/my-gigs" className="group block">
             <Card className="h-full transition-transform group-hover:-translate-y-0.5 group-hover:shadow-md">
               <CardHeader>
                 <span

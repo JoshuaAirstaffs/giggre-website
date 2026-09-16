@@ -45,6 +45,7 @@ function ChangeBadge({ change }: { change: Change }) {
 interface EarningsSummaryCardProps {
   entries: CompletedEntry[];
   loading: boolean;
+  currency: string | null;
 }
 
 // All three figures are computed live from the raw completed-gig entries
@@ -52,25 +53,38 @@ interface EarningsSummaryCardProps {
 // the aggregated `users/{uid}.earnings.total` field — that field can end up
 // split across a stray "USD" key when a gig doc is missing `currencyCode`
 // (see fetchCompletedEntries), silently undercounting the lifetime total.
-export default function EarningsSummaryCard({ entries, loading }: EarningsSummaryCardProps) {
+export default function EarningsSummaryCard({ entries, loading, currency }: EarningsSummaryCardProps) {
   const profile = useAppSelector((root) => root.user.profile);
 
-  const code = profile?.currencyCode ?? "USD";
-  const symbol = currencySymbol(code);
-  const completedGigs = profile?.earnings?.completedGigs ?? 0;
+  const currencies = useMemo(
+    () => Array.from(new Set(entries.map((e) => e.currencyCode))),
+    [entries],
+  );
+  const symbol = currency ? currencySymbol(currency) : "";
+
+  const filteredEntries = useMemo(
+    () => (currency ? entries.filter((e) => e.currencyCode === currency) : entries),
+    [entries, currency],
+  );
 
   const { total, monthTotal, weekTotal, prevMonthTotal, prevWeekTotal } = useMemo(() => {
     const now = new Date();
     const monthStart = startOfMonth(now);
     const weekStart = startOfWeek(now);
     return {
-      total: sumAmountBetween(entries, new Date(0), null),
-      monthTotal: sumAmountBetween(entries, monthStart, null),
-      weekTotal: sumAmountBetween(entries, weekStart, null),
-      prevMonthTotal: sumAmountBetween(entries, startOfPreviousMonth(now), monthStart),
-      prevWeekTotal: sumAmountBetween(entries, startOfPreviousWeek(now), weekStart),
+      total: sumAmountBetween(filteredEntries, new Date(0), null),
+      monthTotal: sumAmountBetween(filteredEntries, monthStart, null),
+      weekTotal: sumAmountBetween(filteredEntries, weekStart, null),
+      prevMonthTotal: sumAmountBetween(filteredEntries, startOfPreviousMonth(now), monthStart),
+      prevWeekTotal: sumAmountBetween(filteredEntries, startOfPreviousWeek(now), weekStart),
     };
-  }, [entries]);
+  }, [filteredEntries]);
+
+  // The lifetime completed-gigs count on the profile is a single aggregate
+  // across all currencies, so once a currency filter is applied it no
+  // longer matches the (now filtered) totals above — fall back to counting
+  // the filtered entries themselves whenever more than one currency exists.
+  const completedGigs = currencies.length > 1 ? filteredEntries.length : profile?.earnings?.completedGigs ?? 0;
 
   return (
     <Card className="py-6 px-8">

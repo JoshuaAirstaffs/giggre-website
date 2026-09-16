@@ -17,7 +17,7 @@ const NOTIFICATIONS_DISPLAY_LIMIT = 20;
 // sorting client-side and slicing down to NOTIFICATIONS_DISPLAY_LIMIT,
 // means a new notification (always the most recent by createdAt) is
 // essentially guaranteed to be included and always sorts first.
-const NOTIFICATIONS_FETCH_LIMIT = 300;
+export const NOTIFICATIONS_FETCH_LIMIT = 300;
 
 const REQUEST_STATUS_TITLES: Record<string, Record<string, string>> = {
   verification_requests: {
@@ -46,6 +46,17 @@ export interface NotificationEntry {
   createdAt: Date;
 }
 
+export function timeAgo(date: Date) {
+  const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 // Live listener rather than a one-time fetch — a new notification (e.g. a
 // host approving a request) should show up in the bell without a reload.
 // No orderBy here on purpose — the Firestore query only filters by userId
@@ -55,7 +66,8 @@ export interface NotificationEntry {
 export function subscribeNotifications(
   uid: string,
   onData: (notifications: NotificationEntry[]) => void,
-  onError: (err: unknown) => void
+  onError: (err: unknown) => void,
+  displayLimit: number = NOTIFICATIONS_DISPLAY_LIMIT
 ): Unsubscribe {
   return onSnapshot(
     query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_FETCH_LIMIT)),
@@ -73,7 +85,7 @@ export function subscribeNotifications(
         };
       });
       entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      onData(entries.slice(0, NOTIFICATIONS_DISPLAY_LIMIT));
+      onData(entries.slice(0, displayLimit));
     },
     onError
   );

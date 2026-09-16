@@ -17,13 +17,27 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { ActionResult } from "@/lib/browse-gigs";
-import type { GigTypeKey } from "@/lib/earnings";
+import { fetchHostCompletedEntries, type GigTypeKey } from "@/lib/earnings";
 
 export const HOST_GIG_COLLECTIONS: Record<GigTypeKey, string> = {
   quick: "quick_gigs",
   open: "open_gigs",
   offered: "offered_gigs",
 };
+
+// Gig-level statuses the "Open — awaiting applicants" stat tile (My Gigs
+// list, host dashboard) counts as still needing/having open slots — a
+// filled open_gig has its slots staffed but hasn't necessarily started or
+// finished the actual work yet, so it stays in this bucket too.
+export const OPEN_CARD_STATUSES = new Set(["open", "filled"]);
+
+// Terminal gig-level statuses — anything else counts as "active" for
+// dashboard purposes (still open, in progress, or awaiting payment).
+const TERMINAL_GIG_STATUSES = new Set(["completed", "cancelled", "declined", "no_worker"]);
+
+export function isActiveGigStatus(status: string): boolean {
+  return !TERMINAL_GIG_STATUSES.has(status);
+}
 
 function toLatLng(geo: GeoPoint | undefined): { lat: number; lng: number } | null {
   return geo ? { lat: geo.latitude, lng: geo.longitude } : null;
@@ -41,6 +55,10 @@ export interface HostGig {
   filledSlotCount: number;
   createdAt: Date | null;
   scheduledDate: Date | null;
+  // Pending applicants (open_gigs only — see ApplicantEntry in
+  // browse-gigs.ts) not yet accepted. Read straight off the same doc, so
+  // this costs nothing extra even for the lightweight list fetch.
+  applicantCount: number;
 }
 
 // Statuses that mean a slot isn't actually occupied (mirrors
@@ -84,6 +102,7 @@ function toHostGig(id: string, data: Record<string, unknown>, gigType: GigTypeKe
     filledSlotCount,
     createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? null,
     scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
+    applicantCount: (data.applicants as unknown[] | undefined)?.length ?? 0,
   };
 }
 
@@ -100,6 +119,63 @@ export async function fetchHostGigs(hostId: string): Promise<HostGig[]> {
     })
   );
   return results.flat().sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
+}
+
+export interface WorkerHistoryEntry {
+  id: string;
+  gigType: GigTypeKey;
+  title: string;
+  status: string;
+  at: Date;
+}
+
+// Powers the Favorites page's worker-profile drawer — a quick "have they
+// actually delivered for me" track record. Reuses fetchHostCompletedEntries
+// (already a proven hostId+status query with the composite index it needs)
+// and filters client-side by workerId instead of adding a new three-field
+// (hostId, workerId, status) query, which would need its own Firestore
+// index. "Applied" only ever comes from open_gigs — quick/offered gigs are
+// host-initiated and have no applicant list (see browse-gigs.ts).
+export async function fetchWorkerHistoryWithHost(
+  hostId: string,
+  workerId: string
+): Promise<{ applied: WorkerHistoryEntry[]; completed: WorkerHistoryEntry[] }> {
+  const [completedEntries, openSnap] = await Promise.all([
+    fetchHostCompletedEntries(hostId),
+    getDocs(query(collection(db, "open_gigs"), where("hostId", "==", hostId))),
+  ]);
+
+  const completed: WorkerHistoryEntry[] = completedEntries
+    .filter((e) => e.workerId === workerId)
+    .map((e) => ({
+      id: "",
+      gigType: (e.gigTypeKey as GigTypeKey) ?? "open",
+      title: e.title,
+      status: "completed",
+      at: e.completedAt,
+    }));
+
+  const applied: WorkerHistoryEntry[] = openSnap.docs
+    .filter((d) => {
+      const applicants = (d.data().applicants as { workerId: string }[] | undefined) ?? [];
+      return applicants.some((a) => a.workerId === workerId);
+    })
+    .map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        gigType: "open" as GigTypeKey,
+        title: (data.title as string) || "Gig",
+        status: (data.status as string) ?? "",
+        at: (data.createdAt as Timestamp | undefined)?.toDate() ?? new Date(0),
+      };
+    });
+
+  const byNewest = (a: WorkerHistoryEntry, b: WorkerHistoryEntry) => b.at.getTime() - a.at.getTime();
+  return {
+    applied: applied.sort(byNewest).slice(0, 3),
+    completed: completed.sort(byNewest).slice(0, 3),
+  };
 }
 
 export interface HostGigTimelineEntry {
@@ -424,6 +500,13 @@ async function buildHostGigDetail(
   // toHostGig's doc-only guess — recompute from it for both the single- and
   // multi-slot cases.
   const filledSlotCount = workers.filter((w) => !UNFILLED_WORKER_STATUSES.has(w.status)).length;
+  // Same problem as filledSlotCount: `slotsCompleted` is only ever written
+  // as 0 at gig creation (see commonGigFields in post-gig.ts) and nothing
+  // increments it afterward, so it always read as 0 regardless of how many
+  // workers actually finished. A worker/slot reaching "completed" status is
+  // the same signal the Workers card uses to show the "Paid" badge, so count
+  // that directly instead of trusting the stale stored field.
+  const slotsCompleted = workers.filter((w) => w.status === "completed").length;
 
   return {
     ...toHostGig(id, data, gigType),
@@ -432,7 +515,7 @@ async function buildHostGigDetail(
     description: (data.description as string) ?? "",
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     ratePerSlot: (data.ratePerSlot as number | undefined) ?? (data.budget as number | undefined) ?? 0,
-    slotsCompleted: (data.slotsCompleted as number | undefined) ?? 0,
+    slotsCompleted,
     category: data.category as string | undefined,
     duration: data.duration as string | undefined,
     requiredSkills: data.requiredSkills as string[] | undefined,

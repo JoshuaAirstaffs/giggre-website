@@ -2,12 +2,14 @@ import {
   GeoPoint,
   Timestamp,
   addDoc,
+  arrayRemove,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
   serverTimestamp,
+  updateDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -156,9 +158,14 @@ export interface WorkerLookupResult {
   photoUrl: string;
   ratingAsWorker: number;
   ratingCount: number;
+  skills: string[];
+  isOnline: boolean;
+  isVerified: boolean;
+  completedGigs: number;
 }
 
 function toWorkerLookupResult(uid: string, data: Record<string, unknown>): WorkerLookupResult {
+  const earnings = data.earnings as Record<string, unknown> | undefined;
   return {
     uid,
     userId: (data.userId as string) ?? "",
@@ -167,6 +174,10 @@ function toWorkerLookupResult(uid: string, data: Record<string, unknown>): Worke
     photoUrl: (data.photoUrl as string) ?? "",
     ratingAsWorker: (data.ratingAsWorker as number | undefined) ?? 0,
     ratingCount: (data.ratingCount as number | undefined) ?? 0,
+    skills: (data.skills as string[] | undefined) ?? [],
+    isOnline: (data.isOnline as boolean | undefined) ?? false,
+    isVerified: (data.isVerified as string | undefined) === "verified",
+    completedGigs: (earnings?.completedGigs as number | undefined) ?? 0,
   };
 }
 
@@ -196,6 +207,24 @@ export async function fetchFavoriteWorkers(hostId: string): Promise<WorkerLookup
 
   const docs = await Promise.all(ids.map((id) => getDoc(doc(db, "users", id))));
   return docs.filter((d) => d.exists()).map((d) => toWorkerLookupResult(d.id, d.data()!));
+}
+
+// Mirrors _unfavorite in favorite_workers_sheet.dart — hosts can only add a
+// worker to favorites from the mobile app today (see gig_detail_sheet.dart's
+// "Favorite worker" toggle on a completed gig), so removal is the only
+// favorites write the website needs.
+export async function removeFavoriteWorker(hostId: string, workerId: string): Promise<void> {
+  await updateDoc(doc(db, "users", hostId), { favoriteWorkerIds: arrayRemove(workerId) });
+}
+
+// Used to re-fetch a single worker fresh (e.g. after picking one from the
+// Favorites page's "Quick Offer" button and landing on the Offered-gig form
+// with just their uid in the URL) rather than threading the whole
+// WorkerLookupResult through query params.
+export async function fetchWorkerByUid(uid: string): Promise<WorkerLookupResult | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  if (!snap.exists()) return null;
+  return toWorkerLookupResult(snap.id, snap.data()!);
 }
 
 export interface ReverseGeocodeResult {

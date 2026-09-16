@@ -2,7 +2,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { verifySession } from "@/lib/dal";
-import { sidebarItems } from "./sidebarItems";
+import { sidebarItems, sharedItems } from "./sidebarItems";
 
 export default async function HostLayout({ children }: { children: React.ReactNode }) {
   const session = await verifySession();
@@ -20,10 +20,10 @@ export default async function HostLayout({ children }: { children: React.ReactNo
         } as React.CSSProperties
       }
     >
-      <AppSidebar variant="inset" user={user} navItems={sidebarItems} />
+      <AppSidebar variant="inset" user={user} navItems={sidebarItems} sharedItems={sharedItems} />
       <SidebarInset>
         <SiteHeader title="Host home" notifications />
-        <div className="flex flex-1 flex-col">{children}</div>
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
       </SidebarInset>
     </SidebarProvider>
   );
