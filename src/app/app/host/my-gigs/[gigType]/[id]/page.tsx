@@ -15,7 +15,6 @@ import {
   Heart,
   MapPin,
   Navigation,
-  Star,
   User,
   Users,
   Wallet,
@@ -434,15 +433,7 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                                   </div>
                                 )}
                                 {w.status === "completed" && (
-                                  <div className="mt-2 flex items-center justify-between gap-2 border-t border-hairline pt-2">
-                                    {w.ratingCount > 0 ? (
-                                      <span className="flex items-center gap-1 text-sm text-ink">
-                                        <Star className="size-3.5 shrink-0 fill-(--host-start) text-(--host-start)" />
-                                        {w.ratingAsWorker.toFixed(1)} / 5
-                                      </span>
-                                    ) : (
-                                      <span />
-                                    )}
+                                  <div className="mt-2 flex items-center justify-end gap-2 border-t border-hairline pt-2">
                                     <button
                                       type="button"
                                       disabled={favoritingId !== null}
@@ -496,12 +487,6 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                                     >
                                       <title>Verified</title>
                                     </BadgeCheck>
-                                  )}
-                                  {a.ratingCount > 0 && (
-                                    <span className="ml-2 inline-flex items-center gap-0.5 text-xs text-muted">
-                                      <Star className="size-3 shrink-0 fill-worker text-worker" />
-                                      {a.ratingAsWorker.toFixed(1)}
-                                    </span>
                                   )}
                                 </div>
                                 {a.skills.length > 0 && (

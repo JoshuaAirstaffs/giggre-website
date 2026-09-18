@@ -4,30 +4,60 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { cn, formatDate, maskEmail } from "@/lib/utils";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { Briefcase, Calendar, FileText, MapIcon, Search, Send, Tag, Users, Wallet } from "lucide-react";
+import {
+    BadgeCheck,
+    Ban,
+    Bookmark,
+    Briefcase,
+    Building2,
+    Calendar,
+    CalendarDays,
+    Check,
+    FileText,
+    Flag,
+    Loader2,
+    Mail,
+    MapIcon,
+    Search,
+    Send,
+    Star,
+    Tag,
+    Users,
+    Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatPostedAge, formatSchedule, initialsOf, salary } from "@/lib/gig-format";
+import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
     applyToOpenGig,
+    blockUser,
     countryCodeFromCoordinates,
     declineOfferedGig,
+    fetchHostByUid,
     fetchSkillNames,
     haversineKm,
+    subscribeBlockedUserIds,
     subscribeOfferedGigs,
     subscribeOpenGigs,
+    subscribeSavedGigEntries,
+    toggleSavedGig,
     withdrawApplication,
     workerHasActiveGig,
     workerHasPendingCancellation,
     type Gig,
+    type HostLookupResult,
 } from "@/lib/browse-gigs";
 
 // Mirrors giggre_app's gigs-near-you feed — see src/lib/browse-gigs.ts for the
@@ -36,6 +66,20 @@ import {
 type SkillFilter = "all" | "mySkills" | "specific";
 const FAR_GIG_THRESHOLD_KM = 50;
 const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100];
+
+// Either "report this host" (from the host profile drawer) or "report this
+// gig posting" (from the gig detail panel) — same reason list/dialog for
+// both, just different Firestore contentType/id, mirroring ReportService's
+// single shared sheet in the mobile app.
+interface ReportTarget {
+    contentType: "user" | "gig";
+    contentId: string;
+    contentSnapshot: string;
+    reportedUserId: string;
+    reportedUserName: string;
+    reportedUserEmail?: string;
+    gigId?: string;
+}
 
 function timeAgo(date: Date | null) {
     if (!date) return null;
@@ -103,6 +147,20 @@ const Browse = () => {
     const [radiusKm, setRadiusKm] = useState<number | null>(10);
     const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
+    const [viewingHostId, setViewingHostId] = useState<string | null>(null);
+    const [hostProfile, setHostProfile] = useState<HostLookupResult | null>(null);
+    const [hostProfileLoading, setHostProfileLoading] = useState(false);
+    const [blockedHostIds, setBlockedHostIds] = useState<Set<string>>(new Set());
+    const [blocking, setBlocking] = useState(false);
+
+    const [savedGigIds, setSavedGigIds] = useState<Set<string>>(new Set());
+
+    const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
+    const [reportReason, setReportReason] = useState<string | null>(null);
+    const [reportDetails, setReportDetails] = useState("");
+    const [reportSubmitting, setReportSubmitting] = useState(false);
+    const [reportSubmitted, setReportSubmitted] = useState(false);
+
     const user = useAppSelector((root) => root.user)
     console.log(user)
 
@@ -121,9 +179,43 @@ const Browse = () => {
         return () => { unsubOpen(); unsubOffered(); };
     }, [uid]);
 
+    // Mirrors the mobile feed's blocked-host filter — a live subscription so a
+    // block made from this drawer hides that host's gigs immediately.
+    useEffect(() => {
+        if (!uid) return;
+        return subscribeBlockedUserIds(uid, (ids) => setBlockedHostIds(new Set(ids)));
+    }, [uid]);
+
+    useEffect(() => {
+        if (!uid) return;
+        return subscribeSavedGigEntries(
+            uid,
+            (entries) => setSavedGigIds(new Set(entries.map((e) => e.id))),
+            (err) => console.error("Failed to load saved gigs:", err)
+        );
+    }, [uid]);
+
     useEffect(() => {
         fetchSkillNames().then(setAllSkillNames).catch(() => {});
     }, []);
+
+    useEffect(() => {
+        if (!viewingHostId) return;
+        let cancelled = false;
+        (async () => {
+            setHostProfileLoading(true);
+            setHostProfile(null);
+            try {
+                const result = await fetchHostByUid(viewingHostId);
+                if (!cancelled) setHostProfile(result);
+            } catch (err) {
+                console.error("Failed to load host profile:", err);
+            } finally {
+                if (!cancelled) setHostProfileLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [viewingHostId]);
 
     // Cached location first (from the user doc), then refine with a fresh
     // browser fix — mirrors the app's "quick fix, then high-accuracy fix" flow.
@@ -142,7 +234,10 @@ const Browse = () => {
         );
     }, []);
 
-    const allGigs = useMemo(() => [...openGigs, ...offeredGigs], [openGigs, offeredGigs]);
+    const allGigs = useMemo(
+        () => [...openGigs, ...offeredGigs].filter((g) => !blockedHostIds.has(g.hostId)),
+        [openGigs, offeredGigs, blockedHostIds]
+    );
 
     const skillFiltered = useMemo(() => {
         if (skillFilter === "all") return allGigs;
@@ -285,7 +380,69 @@ const Browse = () => {
         }
     }
 
+    async function handleBlock() {
+        if (!uid || !hostProfile || blocking) return;
+        setBlocking(true);
+        try {
+            await blockUser(uid, hostProfile.uid);
+            toast.success(`${hostProfile.name} has been blocked`);
+            setViewingHostId(null);
+        } catch (err) {
+            console.error("Failed to block host:", err);
+            toast.error("Couldn't block this user. Please try again.");
+        } finally {
+            setBlocking(false);
+        }
+    }
+
+    async function handleToggleSaved(gig: Gig) {
+        if (!uid) return;
+        const isSaved = savedGigIds.has(gig.id);
+        try {
+            await toggleSavedGig(uid, gig.id, gig.gigType, isSaved);
+        } catch (err) {
+            console.error("Failed to update saved gig:", err);
+            toast.error(isSaved ? "Couldn't remove this bookmark." : "Couldn't save this gig.");
+        }
+    }
+
+    function closeReportDialog(open: boolean) {
+        if (!open) {
+            setReportTarget(null);
+            setReportReason(null);
+            setReportDetails("");
+            setReportSubmitted(false);
+        }
+    }
+
+    async function handleSubmitReport() {
+        if (!uid || !reportTarget || !reportReason || reportSubmitting) return;
+        setReportSubmitting(true);
+        try {
+            await submitReport({
+                contentType: reportTarget.contentType,
+                contentId: reportTarget.contentId,
+                contentSnapshot: reportTarget.contentSnapshot,
+                surface: "gig_detail",
+                gigId: reportTarget.gigId,
+                reporterId: uid,
+                reportedUserId: reportTarget.reportedUserId,
+                reportedUserName: reportTarget.reportedUserName,
+                reportedUserEmail: reportTarget.reportedUserEmail,
+                reason: reportReason,
+                details: reportDetails.trim(),
+            });
+            setReportSubmitted(true);
+        } catch (err) {
+            console.error("Failed to submit report:", err);
+            toast.error("Couldn't submit this report. Please try again.");
+        } finally {
+            setReportSubmitting(false);
+        }
+    }
+
     return (
+        <>
         <div className="flex h-[calc(100dvh-var(--header-height))] flex-col overflow-hidden p-4">
             <div className="grid min-h-0 flex-1 grid-cols-5 gap-4">
                 <div className="col-span-3 flex min-h-0 flex-col">
@@ -387,7 +544,21 @@ const Browse = () => {
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
-                                        <span className="shrink-0 font-semibold text-ink">{salary(gig.currencyCode, gig.budget)}/day</span>
+                                        <div className="flex shrink-0 items-center gap-1">
+                                            <span className="font-semibold text-ink">{salary(gig.currencyCode, gig.budget)}/day</span>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon-sm"
+                                                aria-label={savedGigIds.has(gig.id) ? "Remove bookmark" : "Save gig"}
+                                                className="text-muted hover:text-worker"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleToggleSaved(gig);
+                                                }}
+                                            >
+                                                <Bookmark className={cn("size-4", savedGigIds.has(gig.id) && "fill-worker text-worker")} />
+                                            </Button>
+                                        </div>
                                     </div>
                                     <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                                         <MapIcon className="size-3.5 shrink-0" />
@@ -422,19 +593,56 @@ const Browse = () => {
                 <div className="col-span-2 col-start-4 h-full">
                     {selectedGig ? (
                         <div className="flex h-full flex-col overflow-y-auto rounded-lg border border-hairline bg-sidebar p-6 shadow-sm">
-                            <div className="flex items-start gap-4">
-                                <AvatarHost hostname={selectedGig.hostName} />
-                                <div className="min-w-0">
-                                    <div className="font-display text-xl font-semibold text-ink">{selectedGig.title}</div>
-                                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
-                                        <span>{selectedGig.hostName}</span>
-                                        <span aria-hidden>•</span>
-                                        <span>
-                                            {selectedGig.gigType === "open" && selectedGig.applicantCount > 0
-                                                ? `Posted ${timeAgo(selectedGig.createdAt)} · ${selectedGig.applicantCount} applicant${selectedGig.applicantCount === 1 ? "" : "s"} so far`
-                                                : `Posted ${timeAgo(selectedGig.createdAt)}`}
-                                        </span>
+                            <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start gap-4">
+                                    <AvatarHost hostname={selectedGig.hostName} />
+                                    <div className="min-w-0">
+                                        <div className="font-display text-xl font-semibold text-ink">{selectedGig.title}</div>
+                                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
+                                            <button
+                                                type="button"
+                                                onClick={() => setViewingHostId(selectedGig.hostId)}
+                                                className="font-medium hover:cursor-pointer text-ink underline-offset-2 hover:underline"
+                                            >
+                                                {selectedGig.hostName}
+                                            </button>
+                                            <span aria-hidden>•</span>
+                                            <span>
+                                                {selectedGig.gigType === "open" && selectedGig.applicantCount > 0
+                                                    ? `Posted ${timeAgo(selectedGig.createdAt)} · ${selectedGig.applicantCount} applicant${selectedGig.applicantCount === 1 ? "" : "s"} so far`
+                                                    : `Posted ${timeAgo(selectedGig.createdAt)}`}
+                                            </span>
+                                        </div>
                                     </div>
+                                </div>
+                                <div className="flex shrink-0 items-center gap-1">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label={savedGigIds.has(selectedGig.id) ? "Remove bookmark" : "Save gig"}
+                                        className="text-muted hover:text-worker"
+                                        onClick={() => handleToggleSaved(selectedGig)}
+                                    >
+                                        <Bookmark className={cn("size-4", savedGigIds.has(selectedGig.id) && "fill-worker text-worker")} />
+                                    </Button>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="Report this gig"
+                                        className="text-orange-500 hover:bg-orange-50 hover:text-orange-600"
+                                        onClick={() =>
+                                            setReportTarget({
+                                                contentType: "gig",
+                                                contentId: selectedGig.id,
+                                                contentSnapshot: selectedGig.title,
+                                                reportedUserId: selectedGig.hostId,
+                                                reportedUserName: selectedGig.hostName,
+                                                gigId: selectedGig.id,
+                                            })
+                                        }
+                                    >
+                                        <Flag className="size-4" />
+                                    </Button>
                                 </div>
                             </div>
 
@@ -568,6 +776,195 @@ const Browse = () => {
             </div>
         </div>
 
+        <Sheet open={viewingHostId !== null} onOpenChange={(open) => !open && setViewingHostId(null)}>
+            <SheetContent>
+                <SheetHeader>
+                    <SheetTitle>Host Profile</SheetTitle>
+                    {hostProfile && <SheetDescription>{hostProfile.userId}</SheetDescription>}
+                </SheetHeader>
+                <div className="px-4 pb-4">
+                    {hostProfileLoading ? (
+                        <div className="space-y-3">
+                            <Skeleton className="h-16 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                        </div>
+                    ) : hostProfile ? (
+                        <>
+                            <div className="flex items-center gap-3">
+                                <Avatar className="size-16">
+                                    <AvatarImage src={hostProfile.photoUrl || undefined} alt={hostProfile.name} />
+                                    <AvatarFallback className="bg-worker-tint text-lg font-semibold text-(--worker-text)">
+                                        {initialsOf(hostProfile.name)}
+                                    </AvatarFallback>
+                                    {hostProfile.isOnline && <AvatarBadge className="bg-(--success-start)" />}
+                                </Avatar>
+                                <div className="min-w-0">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                        <p className="truncate text-base font-semibold text-ink">{hostProfile.name}</p>
+                                        {hostProfile.isVerified && <BadgeCheck className="size-4 fill-blue-500 text-white" />}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <Separator className="my-4" />
+
+                            <div className="space-y-3 text-sm">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-muted">Rating</span>
+                                    {hostProfile.ratingCount > 0 ? (
+                                        <span className="flex items-center gap-1 font-medium text-ink">
+                                            <Star className="size-3.5 fill-amber-400 text-amber-400" />
+                                            {hostProfile.ratingAsHost.toFixed(1)} ({hostProfile.ratingCount})
+                                        </span>
+                                    ) : (
+                                        <span className="text-muted">No ratings yet</span>
+                                    )}
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-muted">Posted gigs completed</span>
+                                    <span className="flex items-center gap-1 font-medium text-ink">
+                                        <Briefcase className="size-3.5" />
+                                        {hostProfile.completedGigCount}
+                                    </span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-muted">Member since</span>
+                                    <span className="flex items-center gap-1 font-medium text-ink">
+                                        <CalendarDays className="size-3.5" />
+                                        {hostProfile.memberSince ? formatDate(hostProfile.memberSince) : "Unknown"}
+                                    </span>
+                                </div>
+                                {hostProfile.company && (
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-muted">Company</span>
+                                        <span className="flex min-w-0 items-center gap-1.5 truncate font-medium text-ink">
+                                            <Building2 className="size-3.5 shrink-0" />
+                                            <span className="truncate">{hostProfile.company}</span>
+                                        </span>
+                                    </div>
+                                )}
+                                {hostProfile.email && (
+                                    <div className="flex items-center justify-between gap-2">
+                                        <span className="text-muted">Email</span>
+                                        <span className="flex min-w-0 items-center gap-1.5 truncate font-medium text-ink">
+                                            <Mail className="size-3.5 shrink-0" />
+                                            <span className="truncate">{maskEmail(hostProfile.email)}</span>
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {hostProfile.bio && (
+                                <>
+                                    <Separator className="my-4" />
+                                    <p className="mb-2 text-sm font-medium text-muted">About</p>
+                                    <p className="text-sm whitespace-pre-line text-ink">{hostProfile.bio}</p>
+                                </>
+                            )}
+                        </>
+                    ) : (
+                        <p className="text-sm text-destructive">Couldn&apos;t load this host&apos;s profile.</p>
+                    )}
+                </div>
+
+                {hostProfile && hostProfile.uid !== uid && (
+                    <SheetFooter className="flex-row justify-start gap-1 border-t border-hairline pt-3">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 text-orange-500 hover:bg-orange-50 hover:text-orange-600"
+                            onClick={() =>
+                                setReportTarget({
+                                    contentType: "user",
+                                    contentId: hostProfile.uid,
+                                    contentSnapshot: hostProfile.bio,
+                                    reportedUserId: hostProfile.uid,
+                                    reportedUserName: hostProfile.name,
+                                    reportedUserEmail: hostProfile.email,
+                                })
+                            }
+                        >
+                            <Flag className="size-4" />
+                            Report
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={blocking}
+                            className="gap-1.5 text-red-500 hover:bg-red-50 hover:text-red-600"
+                            onClick={handleBlock}
+                        >
+                            {blocking ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
+                            Block
+                        </Button>
+                    </SheetFooter>
+                )}
+            </SheetContent>
+        </Sheet>
+
+        <Dialog open={reportTarget !== null} onOpenChange={closeReportDialog}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>
+                        {reportTarget?.contentType === "gig" ? `Report "${reportTarget.contentSnapshot}"` : `Report ${reportTarget?.reportedUserName}`}
+                    </DialogTitle>
+                    <DialogDescription>Tell us what&apos;s wrong. Reports are confidential.</DialogDescription>
+                </DialogHeader>
+
+                {reportSubmitted ? (
+                    <p className="text-sm text-ink">Report received. Our team will review and resolve this within 24 hours.</p>
+                ) : (
+                    <>
+                        <div className="space-y-1.5">
+                            {REPORT_REASONS.map((reason) => (
+                                <button
+                                    key={reason}
+                                    type="button"
+                                    onClick={() => setReportReason(reason)}
+                                    className={cn(
+                                        "flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition-colors",
+                                        reportReason === reason ? "border-worker bg-worker-tint text-ink" : "border-hairline hover:bg-mist"
+                                    )}
+                                >
+                                    {reason}
+                                    {reportReason === reason && <Check className="size-4 text-(--worker-text)" />}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="report-details">Additional details (optional)</Label>
+                            <Textarea
+                                id="report-details"
+                                value={reportDetails}
+                                onChange={(e) => setReportDetails(e.target.value)}
+                                rows={3}
+                                placeholder="Add any extra context…"
+                            />
+                        </div>
+                    </>
+                )}
+
+                <DialogFooter>
+                    {reportSubmitted ? (
+                        <Button onClick={() => closeReportDialog(false)}>Done</Button>
+                    ) : (
+                        <>
+                            <Button variant="outline" onClick={() => closeReportDialog(false)} disabled={reportSubmitting}>
+                                Cancel
+                            </Button>
+                            <Button
+                                disabled={!reportReason || reportSubmitting}
+                                onClick={handleSubmitReport}
+                                className="bg-worker text-white hover:bg-(--worker-end)"
+                            >
+                                {reportSubmitting ? "Submitting…" : "Submit report"}
+                            </Button>
+                        </>
+                    )}
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+        </>
     )
 }
 

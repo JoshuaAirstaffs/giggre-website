@@ -125,8 +125,10 @@ export async function validateReferralCode(code: string): Promise<ReferralLookup
 
 // Mirrors giggre_app/lib/screens/referrals/my_referral_screen.dart's
 // `referralMap` — level is purely count-based gamification, no functional
-// reward tied to it, just a badge shown on the referrals card.
-const REFERRAL_MILESTONES = [
+// reward tied to it, just a badge shown on the referrals card. Exported so
+// src/lib/referrals.ts (the My Referrals page's own data helpers) can reuse
+// this same table instead of duplicating it.
+export const REFERRAL_MILESTONES = [
   { referrals: 1, level: 1, label: "🐣 First Steps" },
   { referrals: 3, level: 2, label: "🎉 Party of Three" },
   { referrals: 5, level: 3, label: "🖐️ High Five!" },

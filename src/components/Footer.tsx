@@ -44,6 +44,7 @@ export default function Footer() {
             Company
           </p>
           <ul className="mt-3 space-y-2 text-sm text-muted">
+            <li><a href="/about" className="hover:text-ink">About</a></li>
             <li><a href="/contact" className="hover:text-ink">Contact</a></li>
           </ul>
           <ul className="mt-3 space-y-2 text-sm text-muted">

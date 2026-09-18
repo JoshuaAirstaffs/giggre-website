@@ -11,7 +11,7 @@ import { Briefcase, Check, InfoIcon, Mail, Pencil, Phone, ShieldCheck } from "lu
 import { formatDate } from "@/lib/utils";
 import RatingsCard from "./components/RatingsCard";
 import SkillsCard from "./components/SkillsCard";
-import ReferralsCard from "./components/ReferralsCard";
+import ReferralsCard from "@/components/ReferralsCard";
 import AvailabilitySettings from "./components/AvailabilitySettings";
 import EditProfileDialog from "./components/EditProfileDialog";
 import { Button } from "@/components/ui/button";
@@ -131,7 +131,7 @@ export default function WorkerProfilePage() {
 
             <Separator className="my-5" />
 
-            <ReferralsCard />
+            <ReferralsCard role="worker" />
 
             <Separator className="my-5" />
 

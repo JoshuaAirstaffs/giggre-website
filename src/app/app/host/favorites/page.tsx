@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Briefcase, Heart, Mail, ShieldCheck, Star, UserRound, UserSearch } from "lucide-react";
+import { Briefcase, Heart, Mail, MessageCircle, ShieldCheck, Star, UserRound, UserSearch } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -16,14 +16,7 @@ import { useAppSelector } from "@/store/hooks";
 import { fetchFavoriteWorkers, removeFavoriteWorker, type WorkerLookupResult } from "@/lib/post-gig";
 import { fetchWorkerHistoryWithHost, type WorkerHistoryEntry } from "@/lib/host-gigs";
 import { capitalize } from "@/lib/gig-format";
-
-// Masks everything but the first couple characters of the local part — a
-// host can see enough to recognize the address but not read/copy it whole.
-function maskEmail(email: string) {
-  const [local, domain] = email.split("@");
-  if (!domain) return email;
-  return `${local.slice(0, 2)}***@${domain}`;
-}
+import { maskEmail } from "@/lib/utils";
 
 // A host can only add a worker to favorites from the mobile app today (the
 // "Favorite worker" toggle on a completed gig's detail sheet) — this page is
@@ -84,6 +77,13 @@ export default function HostFavoritesPage() {
 
   const handleQuickOffer = (workerId: string) => {
     router.push(`/app/host/my-gigs/post?tab=offered&workerId=${workerId}`);
+  };
+
+  // Opens straight into a direct conversation with this worker — see the
+  // ?peer= handling in ChatPage.tsx. No chat_rooms doc is created here; that
+  // still only happens lazily on the first message actually sent.
+  const handleMessage = (workerId: string) => {
+    router.push(`/app/host/chat?peer=${workerId}`);
   };
 
   const handleRemove = async (workerId: string) => {
@@ -147,6 +147,14 @@ export default function HostFavoritesPage() {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-0.5">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={`Message ${worker.name}`}
+                      onClick={() => handleMessage(worker.uid)}
+                    >
+                      <MessageCircle className="size-4 text-muted-foreground" />
+                    </Button>
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -320,16 +328,29 @@ export default function HostFavoritesPage() {
                   </div>
                 )}
 
-                <Button
-                  className="mt-6 w-full gap-1.5"
-                  onClick={() => {
-                    handleQuickOffer(profileWorker.uid);
-                    setProfileWorker(null);
-                  }}
-                >
-                  <UserSearch className="size-3.5" />
-                  Quick Offer
-                </Button>
+                <div className="mt-6 flex gap-2">
+                  <Button
+                    variant="outline"
+                    className="flex-1 gap-1.5"
+                    onClick={() => {
+                      handleMessage(profileWorker.uid);
+                      setProfileWorker(null);
+                    }}
+                  >
+                    <MessageCircle className="size-3.5" />
+                    Message
+                  </Button>
+                  <Button
+                    className="flex-1 gap-1.5"
+                    onClick={() => {
+                      handleQuickOffer(profileWorker.uid);
+                      setProfileWorker(null);
+                    }}
+                  >
+                    <UserSearch className="size-3.5" />
+                    Quick Offer
+                  </Button>
+                </div>
               </div>
             </>
           )}

@@ -19,7 +19,7 @@ import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 
 export default function OpenGigForm() {
   const { authUser, profile } = useAppSelector((root) => root.user);
-  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, getScheduledDate, currencyCode } = useCommonGigFields();
+  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, checkContent, getScheduledDate, currencyCode } = useCommonGigFields();
   const [skills, setSkills] = useState<string[]>([]);
   const [requiredSkill, setRequiredSkill] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
@@ -37,6 +37,8 @@ export default function OpenGigForm() {
     const error = validateCommon();
     if (error) return toast.error(error);
     if (!requiredSkill) return toast.error("Please select a required skill.");
+    const contentError = await checkContent();
+    if (contentError) return toast.error(contentError);
 
     setSubmitting(true);
     try {

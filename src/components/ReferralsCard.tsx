@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Copy } from "lucide-react";
+import Link from "next/link";
+import { Check, ChevronRight, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,8 +14,12 @@ import { referralLevelLabel } from "@/lib/registration";
 // welcome_screen.dart) and only ever copied, not shared via a deep link.
 // The milestone nickname (referralLevelLabel) matches that screen's
 // `referralMap` exactly; the full progress-bar/roadmap views are a separate,
-// larger feature left out here.
-export default function ReferralsCard() {
+// larger feature left out here. Referrals aren't role-specific (one code per
+// account), so this is shared between the host and worker profile pages —
+// `role` only picks which brand color it's tinted with. Links to the fuller
+// /app/{role}/referrals page (referral history list + milestone roadmap,
+// see ReferralsPage.tsx) for the parts that don't fit in a summary card.
+export default function ReferralsCard({ role }: { role: "host" | "worker" }) {
   const referrals = useAppSelector((root) => root.user.profile?.referrals);
   const [copied, setCopied] = useState(false);
 
@@ -23,6 +28,9 @@ export default function ReferralsCard() {
   const totalReferred = referrals?.referrals_count ?? 0;
   const verified = referrals?.verified_referrals ?? 0;
   const milestoneLabel = referralLevelLabel(level);
+
+  const tintClass = role === "host" ? "bg-host-tint" : "bg-worker-tint";
+  const textClass = role === "host" ? "text-(--host-text)" : "text-(--worker-text)";
 
   async function handleCopy() {
     if (!code) return;
@@ -48,8 +56,8 @@ export default function ReferralsCard() {
         ) : (
           <>
             <div>
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-dashed border-hairline bg-worker-tint px-3 py-2">
-                <span className="font-mono text-sm font-semibold tracking-widest text-(--worker-text)">{code}</span>
+              <div className={`flex items-center justify-between gap-3 rounded-lg border border-dashed border-hairline ${tintClass} px-3 py-2`}>
+                <span className={`font-mono text-sm font-semibold tracking-widest ${textClass}`}>{code}</span>
                 <Button variant="ghost" size="icon-sm" onClick={handleCopy} aria-label="Copy referral code">
                   {copied ? <Check className="size-4 text-(--success-start)" /> : <Copy className="size-4" />}
                 </Button>
@@ -59,7 +67,7 @@ export default function ReferralsCard() {
 
             {milestoneLabel && (
               <div className="flex justify-center">
-                <Badge variant="secondary" className="bg-worker-tint text-(--worker-text)">
+                <Badge variant="secondary" className={`${tintClass} ${textClass}`}>
                   {milestoneLabel}
                 </Badge>
               </div>
@@ -79,6 +87,14 @@ export default function ReferralsCard() {
                 <p className="text-xs text-muted">Verified</p>
               </div>
             </div>
+
+            <Link
+              href={`/app/${role}/referrals`}
+              className={`flex items-center justify-center gap-1 text-sm font-medium ${textClass} hover:underline`}
+            >
+              View all referrals
+              <ChevronRight className="size-3.5" />
+            </Link>
           </>
         )}
       </div>

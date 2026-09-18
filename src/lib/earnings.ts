@@ -122,24 +122,32 @@ export async function fetchHostCompletedEntries(hostId: string): Promise<Complet
       const snap = await getDocs(
         query(collection(db, name), where("hostId", "==", hostId), where("status", "==", "completed"))
       );
-      return snap.docs.map((d) => {
-        const data = d.data();
-        const completedAt: Timestamp | undefined = data.completedAt ?? data.createdAt;
-        return {
-          completedAt: completedAt?.toDate() ?? new Date(),
-          amount: (data.budget as number | undefined) ?? 0,
-          currencyCode: (data.currencyCode as string | undefined) ?? "USD",
-          title: (data.title as string | undefined) || GIG_TYPE_LABELS[name],
-          hostName: (data.hostName as string | undefined) ?? "",
-          address: (data.address as string | undefined) ?? "",
-          gigType: GIG_TYPE_LABELS[name],
-          gigTypeKey: GIG_TYPE_KEYS[name],
-          workerSlots: (data.workerSlots as number | undefined) ?? 1,
-          // Quick gigs use assignedWorkerId; open/offered use workerId
-          // directly (see the respective *_gig_model.dart).
-          workerId: (data.workerId as string | undefined) ?? (data.assignedWorkerId as string | undefined) ?? "",
-        };
-      });
+      return snap.docs
+        // A genuine multi-slot gig (workerSlots > 1) flips its own top-level
+        // `status` to 'completed' once every filled slot finishes (see
+        // host_payment_code_sheet.dart) — but each of its slots is already
+        // its own entry below via the `workers` collectionGroup query.
+        // Counting the parent doc here too would double the spend for every
+        // multi-slot gig this host has ever completed.
+        .filter((d) => ((d.data().workerSlots as number | undefined) ?? 1) <= 1)
+        .map((d) => {
+          const data = d.data();
+          const completedAt: Timestamp | undefined = data.completedAt ?? data.createdAt;
+          return {
+            completedAt: completedAt?.toDate() ?? new Date(),
+            amount: (data.budget as number | undefined) ?? 0,
+            currencyCode: (data.currencyCode as string | undefined) ?? "USD",
+            title: (data.title as string | undefined) || GIG_TYPE_LABELS[name],
+            hostName: (data.hostName as string | undefined) ?? "",
+            address: (data.address as string | undefined) ?? "",
+            gigType: GIG_TYPE_LABELS[name],
+            gigTypeKey: GIG_TYPE_KEYS[name],
+            workerSlots: (data.workerSlots as number | undefined) ?? 1,
+            // Quick gigs use assignedWorkerId; open/offered use workerId
+            // directly (see the respective *_gig_model.dart).
+            workerId: (data.workerId as string | undefined) ?? (data.assignedWorkerId as string | undefined) ?? "",
+          };
+        });
     })
   );
 

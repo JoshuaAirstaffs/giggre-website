@@ -40,7 +40,7 @@ interface OfferedGigFormProps {
 
 export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProps) {
   const { authUser, profile } = useAppSelector((root) => root.user);
-  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, getScheduledDate, currencyCode } = useCommonGigFields();
+  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, checkContent, getScheduledDate, currencyCode } = useCommonGigFields();
   const [skills, setSkills] = useState<string[]>([]);
   const [skillRequired, setSkillRequired] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
@@ -126,6 +126,8 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     if (selectedWorkers.length === 0) {
       return toast.error("Please select at least one worker to offer this gig to.");
     }
+    const contentError = await checkContent();
+    if (contentError) return toast.error(contentError);
 
     setSubmitting(true);
     try {

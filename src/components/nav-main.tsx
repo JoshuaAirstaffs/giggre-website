@@ -8,6 +8,7 @@ import {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
@@ -16,6 +17,7 @@ export type NavItem = {
   title: string
   url: string
   icon?: React.ReactNode
+  badge?: number
 }
 
 // A nested item's URL is often a path *under* another item's URL (e.g.
@@ -37,13 +39,48 @@ export function findActiveUrl(items: NavItem[], pathname: string): string | null
   }, null)
 }
 
-export function NavMain({ items, label, activeUrl }: { items: NavItem[]; label?: string; activeUrl?: string | null }) {
+export function NavMain({
+  items,
+  label,
+  activeUrl,
+  role,
+}: {
+  items: NavItem[]
+  label?: string
+  activeUrl?: string | null
+  role?: "host" | "worker"
+}) {
   const pathname = usePathname()
 
   // Callers rendering a single NavMain group can omit activeUrl and let it
   // compute its own; callers rendering multiple groups should pass one
   // shared activeUrl (from findActiveUrl over every group's items combined).
   const resolvedActiveUrl = activeUrl !== undefined ? activeUrl : findActiveUrl(items, pathname)
+
+  // Host's brand color is yellow, worker's is blue — the active sidebar item
+  // reflects whichever role's section is currently being viewed.
+  const activeClassName =
+    role === "host"
+      ? "data-active:bg-host data-active:text-on-host"
+      : role === "worker"
+        ? "data-active:bg-worker data-active:text-on-worker"
+        : "data-active:bg-sidebar-primary data-active:text-sidebar-primary-foreground"
+
+  // Icons stay tinted with the role color at rest, then switch to match the
+  // active item's foreground once its solid role-color background kicks in.
+  const iconClassName =
+    role === "host"
+      ? "text-(--host-text) group-data-active/menu-button:text-on-host"
+      : role === "worker"
+        ? "text-(--worker-text) group-data-active/menu-button:text-on-worker"
+        : ""
+
+  const badgeClassName =
+    role === "host"
+      ? "bg-host text-on-host"
+      : role === "worker"
+        ? "bg-worker text-on-worker"
+        : "bg-sidebar-primary text-sidebar-primary-foreground"
 
   return (
     <SidebarGroup>
@@ -57,12 +94,17 @@ export function NavMain({ items, label, activeUrl }: { items: NavItem[]; label?:
                 <SidebarMenuButton
                   tooltip={item.title}
                   isActive={isActive}
-                  className="data-active:bg-sidebar-primary data-active:text-sidebar-primary-foreground"
+                  className={activeClassName}
                   render={<Link href={item.url} />}
                 >
-                  {item.icon}
+                  <span className={iconClassName}>{item.icon}</span>
                   <span>{item.title}</span>
                 </SidebarMenuButton>
+                {!!item.badge && (
+                  <SidebarMenuBadge className={badgeClassName}>
+                    {item.badge > 99 ? "99+" : item.badge}
+                  </SidebarMenuBadge>
+                )}
               </SidebarMenuItem>
             )
           })}

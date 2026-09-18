@@ -7,6 +7,8 @@ import {
   doc,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
   query,
   serverTimestamp,
   updateDoc,
@@ -195,6 +197,28 @@ export async function findWorkerByUserId(userId: string): Promise<WorkerLookupRe
 
   const found = snap.docs[0];
   return toWorkerLookupResult(found.id, found.data());
+}
+
+const NAME_SEARCH_PAGE_SIZE = 200;
+
+// Firestore has no case-insensitive/substring search, and names aren't
+// stored with a normalized lowercase field to range-query against — so this
+// pages through users ordered by name and filters client-side, same
+// read-cost tradeoff fetchFavoriteWorkers below already makes (N reads) for
+// a marketplace this size. Callers should debounce rather than call this per
+// keystroke.
+export async function searchUsersByName(name: string, limitCount = 8): Promise<WorkerLookupResult[]> {
+  const needle = name.trim().toLowerCase();
+  if (!needle) return [];
+
+  const snap = await getDocs(query(collection(db, "users"), orderBy("name"), limit(NAME_SEARCH_PAGE_SIZE)));
+  const matches: WorkerLookupResult[] = [];
+  for (const d of snap.docs) {
+    const worker = toWorkerLookupResult(d.id, d.data());
+    if (worker.name.toLowerCase().includes(needle)) matches.push(worker);
+    if (matches.length >= limitCount) break;
+  }
+  return matches;
 }
 
 // Mirrors _WorkerPickerSheet._loadFavorites in post_offered_gig_screen.dart —

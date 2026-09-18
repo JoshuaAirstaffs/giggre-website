@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { countryCodeFromCoordinates } from "@/lib/browse-gigs";
+import { CONTENT_REJECTION_MESSAGE, containsBlockedContent } from "@/lib/content-filter";
 import { currencyCodeForCountry, reverseGeocode, type GigLocation } from "@/lib/post-gig";
 import { useAppSelector } from "@/store/hooks";
 
@@ -167,6 +168,15 @@ export function useCommonGigFields() {
     return null;
   }
 
+  // Mirrors post_*_gig_screen.dart's own submit-time check (title +
+  // description against ContentFilterService) — called separately from
+  // validateCommon since it's async (reads the admin-managed blocked-term
+  // list) while every other check here is synchronous.
+  async function checkContent(): Promise<string | null> {
+    const blocked = await containsBlockedContent(fields.title, fields.description);
+    return blocked ? CONTENT_REJECTION_MESSAGE : null;
+  }
+
   const currencyCode = currencyCodeForCountry(fields.countryCode);
 
   return {
@@ -177,6 +187,7 @@ export function useCommonGigFields() {
     captureLocation,
     reset,
     validateCommon,
+    checkContent,
     getScheduledDate,
     currencyCode,
   };

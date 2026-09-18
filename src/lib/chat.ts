@@ -108,7 +108,16 @@ export interface ChatMessage {
   name: string;
   text: string;
   hasSeen: boolean;
+  // Drives the sent-message "seen" checkmark (mirrors chat.dart's
+  // hasSeenByPeer) — distinct from `hasSeen`, which only feeds the chat
+  // list's unread indicator.
+  hasSeenByPeer: boolean;
   createdAt: Date;
+  // Web-only, no giggre_app equivalent yet — set by deleteMessage below.
+  // Soft-deleted rather than removed so the thread doesn't visibly shrink
+  // and any unread/last-message bookkeeping tied to the doc stays intact;
+  // the client renders it as "Message has been removed" instead of `text`.
+  isDeleted: boolean;
 }
 
 // The live window covers the most recent messages in real time; anything
@@ -124,7 +133,9 @@ function toChatMessage(id: string, data: Record<string, unknown>): ChatMessage {
     name: (data.name as string | undefined) ?? "",
     text: (data.text as string | undefined) ?? "",
     hasSeen: (data.hasSeen as boolean | undefined) ?? false,
+    hasSeenByPeer: (data.hasSeenByPeer as boolean | undefined) ?? false,
     createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? new Date(),
+    isDeleted: (data.isDeleted as boolean | undefined) ?? false,
   };
 }
 
@@ -204,6 +215,7 @@ export async function sendDirectMessage(input: SendDirectMessageInput): Promise<
     hasSeenByAdmin: false,
     hasSeenByPeer: false,
     isAutoReply: false,
+    isDeleted: false,
     createdAt: serverTimestamp(),
   });
 
@@ -229,16 +241,75 @@ export function subscribeRoomUnread(roomId: string, otherUid: string, onData: (h
   );
 }
 
-export async function markRoomMessagesSeen(roomId: string, otherUid: string): Promise<void> {
-  const snap = await getDocs(
-    query(
-      collection(db, "chat_rooms", roomId, "messages"),
-      where("senderId", "==", otherUid),
-      where("hasSeen", "==", false)
-    )
+// Sidebar-wide unread count — same per-room subscription home_chat.dart uses
+// for its badge dot (a Map<roomId, bool> kept live, see _listenForUnread),
+// except aggregated as a count of unread conversations rather than a single
+// "any unread" boolean.
+export function subscribeUnreadRoomsCount(uid: string, onData: (count: number) => void): Unsubscribe {
+  const roomUnsubs = new Map<string, Unsubscribe>();
+  const unreadByRoom = new Map<string, boolean>();
+
+  function recompute() {
+    onData([...unreadByRoom.values()].filter(Boolean).length);
+  }
+
+  const unsubscribeRooms = onSnapshot(
+    query(collection(db, "chat_rooms"), where("participants", "array-contains", uid)),
+    (snap) => {
+      const currentIds = new Set(snap.docs.map((d) => d.id));
+
+      roomUnsubs.forEach((unsub, roomId) => {
+        if (currentIds.has(roomId)) return;
+        unsub();
+        roomUnsubs.delete(roomId);
+        unreadByRoom.delete(roomId);
+      });
+
+      snap.docs.forEach((d) => {
+        if (roomUnsubs.has(d.id)) return;
+        const otherUid = otherParticipant(toChatRoom(d.id, d.data()), uid);
+        if (!otherUid) return;
+        roomUnsubs.set(
+          d.id,
+          subscribeRoomUnread(d.id, otherUid, (hasUnread) => {
+            unreadByRoom.set(d.id, hasUnread);
+            recompute();
+          })
+        );
+      });
+
+      recompute();
+    },
+    () => onData(0)
   );
-  if (snap.empty) return;
+
+  return () => {
+    unsubscribeRooms();
+    roomUnsubs.forEach((unsub) => unsub());
+  };
+}
+
+// Mirrors chat.dart's _markSupportMessagesAsSeen: `hasSeen` (drives the chat
+// list's unread indicator) and `hasSeenByPeer` (drives the sender's "seen"
+// checkmark, see subscribeMessages/ChatMessage) are tracked separately, so
+// both need marking on the peer's messages when this thread is opened.
+export async function markRoomMessagesSeen(roomId: string, otherUid: string): Promise<void> {
+  const messagesRef = collection(db, "chat_rooms", roomId, "messages");
+  const [unseenSnap, unseenByPeerSnap] = await Promise.all([
+    getDocs(query(messagesRef, where("senderId", "==", otherUid), where("hasSeen", "==", false))),
+    getDocs(query(messagesRef, where("senderId", "==", otherUid), where("hasSeenByPeer", "==", false))),
+  ]);
+  if (unseenSnap.empty && unseenByPeerSnap.empty) return;
   const batch = writeBatch(db);
-  snap.docs.forEach((d) => batch.update(d.ref, { hasSeen: true }));
+  unseenSnap.docs.forEach((d) => batch.update(d.ref, { hasSeen: true }));
+  unseenByPeerSnap.docs.forEach((d) => batch.update(d.ref, { hasSeenByPeer: true }));
   await batch.commit();
+}
+
+// Soft-delete — flips `isDeleted` rather than removing the doc, so the
+// thread's message order/count and any hasSeen bookkeeping on it stay
+// intact. The client (ChatPage.tsx) renders an isDeleted message as
+// "Message has been removed" instead of its `text`.
+export async function deleteMessage(roomId: string, messageId: string): Promise<void> {
+  await updateDoc(doc(db, "chat_rooms", roomId, "messages", messageId), { isDeleted: true });
 }

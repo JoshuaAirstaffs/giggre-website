@@ -21,6 +21,14 @@
   --host-tint: #FFF6D6;
   --host-text: #7A5900;
 
+  /* Fixed (non-theme-switching) text colors for content sitting directly on
+     --worker-start/--host-start solid fills. Those fills stay roughly the
+     same brightness in dark mode (host-start is still a bright yellow), so
+     the foreground can't flip with --ink/--paper the way normal text does —
+     it needs to stay legible against a color that doesn't invert. */
+  --on-worker: #FFFFFF;
+  --on-host: #241A00;
+
   --quick-start: #E0B400;
   --quick-end: #B58C00;
   --quick-tint: #FDF6DC;
@@ -172,6 +180,8 @@
   --color-worker-tint: var(--worker-tint);
   --color-host: var(--host-start);
   --color-host-tint: var(--host-tint);
+  --color-on-worker: var(--on-worker);
+  --color-on-host: var(--on-host);
   --font-display: var(--font-display);
   --font-body: var(--font-body);
   --font-mono: var(--font-mono);
