@@ -23,22 +23,33 @@ export default function DownloadCTA() {
               "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.25), transparent 40%), radial-gradient(circle at 80% 80%, rgba(255,255,255,0.18), transparent 45%)",
           }}
         />
+
         <h2 className="relative font-[var(--font-display)] text-3xl font-semibold tracking-tight text-white sm:text-4xl">
           Gigs are already moving near you.
         </h2>
+
         <p className="relative mx-auto mt-4 max-w-md text-white/85">
           Download Giggre and see what&apos;s nearby right now.
         </p>
+
         <div className="relative mt-8 flex flex-wrap items-center justify-center gap-4">
           <a
-            href="#"
+            href="https://play.google.com/store/apps/details?id=com.giggre.mobile"
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-medium text-[#10151F] shadow-sm transition-transform hover:scale-[1.03]"
           >
             Get it on Google Play
           </a>
-          <span className="rounded-full border border-white/40 px-6 py-3 text-sm font-medium text-white/70">
-            App Store — coming soon
-          </span>
+
+          <a
+            href="https://apps.apple.com/app/giggre/id6806056370"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 rounded-full bg-white px-6 py-3 text-sm font-medium text-[#10151F] shadow-sm transition-transform hover:scale-[1.03]"
+          >
+            Download on the App Store
+          </a>
         </div>
       </motion.div>
     </section>
