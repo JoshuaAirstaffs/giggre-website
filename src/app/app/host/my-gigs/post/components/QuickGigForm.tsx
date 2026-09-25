@@ -64,7 +64,20 @@ function clearWatchedGigId() {
 
 export default function QuickGigForm() {
   const { authUser, profile } = useAppSelector((root) => root.user);
-  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, checkContent, getScheduledDate, currencyCode } = useCommonGigFields();
+  const {
+    fields,
+    setField,
+    setLocation,
+    locating,
+    captureLocation,
+    reset,
+    validateCommon,
+    checkContent,
+    getScheduledDate,
+    resolvePayFields,
+    resolveWorkDuration,
+    currencyCode,
+  } = useCommonGigFields();
   const [submitting, setSubmitting] = useState(false);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
   const unsubscribeSearchRef = useRef<(() => void) | null>(null);
@@ -206,7 +219,8 @@ export default function QuickGigForm() {
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
         description: fields.description.trim(),
-        budget: Number(fields.budget),
+        ...resolvePayFields(),
+        workDurationHours: resolveWorkDuration(),
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),

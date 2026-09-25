@@ -46,6 +46,20 @@ export interface NotificationEntry {
   createdAt: Date;
 }
 
+// `userId` on a notifications doc is just "who to show this to" — it carries
+// no role, so a dual-role account (one uid acting as both host and worker)
+// gets every doc back regardless of which side of the app they're on. Most
+// categories are genuinely account-level and belong on both (verification,
+// generic notices), but a few are only meaningful for one role:
+// - "new_applicant" is written with userId = the gig's hostId (see
+//   browse-gigs.ts) when a worker applies — purely host-relevant.
+// - "skill_request" only exists because a worker submitted a skill for
+//   verification (toolchest) — purely worker-relevant.
+const CATEGORY_EXCLUDED_FOR_ROLE: Record<"host" | "worker", ReadonlySet<string>> = {
+  host: new Set(["skill_request"]),
+  worker: new Set(["new_applicant"]),
+};
+
 export function timeAgo(date: Date) {
   const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
   if (seconds < 60) return "Just now";
@@ -67,23 +81,27 @@ export function subscribeNotifications(
   uid: string,
   onData: (notifications: NotificationEntry[]) => void,
   onError: (err: unknown) => void,
-  displayLimit: number = NOTIFICATIONS_DISPLAY_LIMIT
+  displayLimit: number = NOTIFICATIONS_DISPLAY_LIMIT,
+  role?: "host" | "worker"
 ): Unsubscribe {
+  const excludedCategories = role ? CATEGORY_EXCLUDED_FOR_ROLE[role] : undefined;
   return onSnapshot(
     query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_FETCH_LIMIT)),
     (snap) => {
-      const entries = snap.docs.map((d) => {
-        const data = d.data();
-        const createdAt: Timestamp | undefined = data.createdAt;
-        const category = (data.category as string | undefined) ?? "";
-        const requestStatus = (data.request_status as string | undefined) ?? "";
-        return {
-          id: d.id,
-          title: titleForCategory(category, requestStatus),
-          body: (data.message as string | undefined) ?? "",
-          createdAt: createdAt?.toDate() ?? new Date(),
-        };
-      });
+      const entries = snap.docs
+        .filter((d) => !excludedCategories?.has(d.data().category as string))
+        .map((d) => {
+          const data = d.data();
+          const createdAt: Timestamp | undefined = data.createdAt;
+          const category = (data.category as string | undefined) ?? "";
+          const requestStatus = (data.request_status as string | undefined) ?? "";
+          return {
+            id: d.id,
+            title: titleForCategory(category, requestStatus),
+            body: (data.message as string | undefined) ?? "",
+            createdAt: createdAt?.toDate() ?? new Date(),
+          };
+        });
       entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
       onData(entries.slice(0, displayLimit));
     },

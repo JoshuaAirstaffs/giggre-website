@@ -23,6 +23,7 @@ import {
     Check,
     FileText,
     Flag,
+    Hourglass,
     Loader2,
     Mail,
     MapIcon,
@@ -37,7 +38,7 @@ import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatPostedAge, formatSchedule, initialsOf, salary } from "@/lib/gig-format";
+import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
@@ -400,6 +401,7 @@ const Browse = () => {
         const isSaved = savedGigIds.has(gig.id);
         try {
             await toggleSavedGig(uid, gig.id, gig.gigType, isSaved);
+            toast.success(isSaved ? "Bookmark removed." : "Gig saved.");
         } catch (err) {
             console.error("Failed to update saved gig:", err);
             toast.error(isSaved ? "Couldn't remove this bookmark." : "Couldn't save this gig.");
@@ -545,7 +547,7 @@ const Browse = () => {
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
                                         <div className="flex shrink-0 items-center gap-1">
-                                            <span className="font-semibold text-ink">{salary(gig.currencyCode, gig.budget)}/day</span>
+                                            <span className="font-semibold text-ink">{payLabel(gig.currencyCode, gig)}</span>
                                             <Button
                                                 variant="ghost"
                                                 size="icon-sm"
@@ -656,7 +658,7 @@ const Browse = () => {
 
                                 <div>
                                     <SectionLabel icon={Wallet}>Salary</SectionLabel>
-                                    <p className="mt-1 text-sm font-medium text-ink">{salary(selectedGig.currencyCode, selectedGig.budget)}/day</p>
+                                    <p className="mt-1 text-sm font-medium text-ink">{payLabel(selectedGig.currencyCode, selectedGig)}</p>
                                 </div>
 
                                 <Separator />
@@ -665,6 +667,19 @@ const Browse = () => {
                                     <SectionLabel icon={Calendar}>Schedule</SectionLabel>
                                     <p className="mt-1 text-sm text-ink">{formatSchedule(selectedGig.scheduledDate)}</p>
                                 </div>
+
+                                {selectedGig.workDurationHours !== undefined && (
+                                    <>
+                                        <Separator />
+                                        <div>
+                                            <SectionLabel icon={Hourglass}>Work Duration</SectionLabel>
+                                            <p className="mt-1 text-sm text-ink">
+                                                {formatWorkDuration(selectedGig.workDurationHours)}{" "}
+                                                <span className="text-xs text-muted">estimate only, not a commitment</span>
+                                            </p>
+                                        </div>
+                                    </>
+                                )}
 
                                 <Separator />
 

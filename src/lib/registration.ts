@@ -200,9 +200,11 @@ export async function createUserProfile(profile: NewUserProfile) {
     skills: [],
     openGigsUnlocked: false,
     signInMethod: profile.signInMethod,
-    ratingAsWorker: 5.0,
-    ratingAsHost: 5.0,
-    ratingCount: 0,
+    // No rating fields seeded here — matches the current app's
+    // register_screen.dart exactly. A new user simply has no
+    // ratingWorker/ratingHost aggregate until their first rating (see
+    // ratings.ts); nothing reads the old ratingAsWorker/ratingAsHost/
+    // ratingCount flat fields anymore.
     slot: "AVAILABLE",
     acceptanceRate: 1.0,
     isVerified: "unverified",

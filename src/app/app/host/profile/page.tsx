@@ -12,6 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { formatDate } from "@/lib/utils";
+import { ratingAverage } from "@/lib/ratings";
 import { useHostCompletedEntries } from "@/hooks/use-host-completed-entries";
 import SpendChartCard from "../components/SpendChartCard";
 import EditProfileDialog from "./components/EditProfileDialog";
@@ -26,7 +27,13 @@ function MetaItem({ icon: Icon, children }: { icon: React.ElementType; children:
   );
 }
 
-function StarRating({ value }: { value: number }) {
+// `value` is null for a host with no ratings yet — deliberately not
+// defaulted to a perfect 5, matching RatingSummary.average in the Flutter
+// app (see ratings.ts).
+function StarRating({ value }: { value: number | null }) {
+  if (value === null) {
+    return <span className="text-xs text-muted">No ratings yet</span>;
+  }
   return (
     <div className="flex items-center gap-1">
       <div className="flex items-center gap-0.5">
@@ -105,7 +112,7 @@ export default function HostProfilePage() {
 
                 {profile?.company && <p className="text-sm text-muted">{profile.company}</p>}
 
-                <StarRating value={profile?.ratingAsHost ?? 5} />
+                <StarRating value={ratingAverage(profile?.ratingHost)} />
 
                 <div className="flex flex-wrap gap-x-5 gap-y-1.5">
                   {(profile?.email ?? authUser?.email) && (

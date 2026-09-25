@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Banknote, Star } from "lucide-react";
+import { Banknote, Check, Pencil, Star, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   AlertDialog,
@@ -21,15 +21,27 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { salary } from "@/lib/gig-format";
-import { confirmCashPayment, rateWorker, type HostGigDetail, type HostGigWorkerEntry } from "@/lib/host-gigs";
+import {
+  confirmCashPayment,
+  payableAmountForWorker,
+  rateWorker,
+  type HostGigDetail,
+  type HostGigWorkerEntry,
+} from "@/lib/host-gigs";
+import { RATING_COMMENT_MAX_LENGTH, WORKER_RATING_TAGS } from "@/lib/ratings";
+import { useAppSelector } from "@/store/hooks";
 
 // Mirrors the host's payment flow in the Flutter app: PaymentSelectionSheet
-// (cash-only today) -> its "Confirm Cash Payment" AlertDialog -> the code it
-// hands off to HostPaymentCodeSheet -> once the worker confirms (mobile-only
-// for now), _RatingDialog. This dialog covers the whole chain except the
-// worker-side "enter code" step (worker_payment_confirm_sheet.dart), which
-// still only exists on mobile.
+// (cash-only today, with its manual amount-override editor) -> its "Confirm
+// Cash Payment" AlertDialog -> the code it hands off to HostPaymentCodeSheet
+// -> once the worker confirms (mobile-only for now), the shared
+// RatingDialog (rating_dialog.dart). This dialog covers the whole chain
+// except the worker-side "enter code" step (worker_payment_confirm_sheet.dart),
+// which still only exists on mobile.
 type Step = "method" | "confirm" | "code" | "rating";
 
 const STAR_LABELS = ["", "Poor", "Fair", "Good", "Great", "Excellent"];
@@ -45,10 +57,25 @@ function formatCode(code: string) {
 }
 
 export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPaymentDialogProps) {
+  const authUid = useAppSelector((root) => root.user.authUser?.uid);
+  const myName = useAppSelector((root) => root.user.profile?.name) || "Host";
+
   const [step, setStep] = useState<Step>("method");
   const [confirming, setConfirming] = useState(false);
   const [paymentCode, setPaymentCode] = useState<string | null>(null);
+
+  // Manual amount override — mirrors PaymentSelectionSheet's edit-pencil
+  // flow exactly. `overrideAmount` is only committed once the host taps the
+  // inline editor's checkmark; `amountDraft`/`adjustmentReason` are the
+  // in-progress form values.
+  const [editingAmount, setEditingAmount] = useState(false);
+  const [overrideAmount, setOverrideAmount] = useState<number | null>(null);
+  const [amountDraft, setAmountDraft] = useState("");
+  const [adjustmentReason, setAdjustmentReason] = useState("");
+
   const [selectedStars, setSelectedStars] = useState(0);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [comment, setComment] = useState("");
   const [submittingRating, setSubmittingRating] = useState(false);
   const open = gig !== null && worker !== null;
 
@@ -60,13 +87,19 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setStep("method");
     setPaymentCode(null);
+    setEditingAmount(false);
+    setOverrideAmount(null);
+    setAmountDraft("");
+    setAdjustmentReason("");
     setSelectedStars(0);
+    setSelectedTags([]);
+    setComment("");
   }, [gig?.id, worker?.workerId, open]);
 
   // The worker confirming receipt (mobile-only for now) flips their status
   // past 'payment' — move straight to rating them once that happens while
   // the code screen is still showing, instead of leaving a stale code on
-  // screen (mirrors the app going QR sheet -> celebration -> _RatingDialog).
+  // screen (mirrors the app going QR sheet -> celebration -> RatingDialog).
   useEffect(() => {
     if (step !== "code" || !worker || !gig) return;
     const latest = gig.workers.find((w) => w.workerId === worker.workerId);
@@ -81,11 +114,15 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gig, step]);
 
+  function toggleTag(tag: string) {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
   async function handleSubmitRating() {
-    if (!gig || !worker || selectedStars === 0) return;
+    if (!gig || !worker || !authUid || selectedStars === 0) return;
     setSubmittingRating(true);
     try {
-      const result = await rateWorker(gig, worker, selectedStars);
+      const result = await rateWorker(gig, worker, authUid, myName, selectedStars, selectedTags, comment);
       if (result.ok) {
         toast.success(`Rating submitted for ${worker.workerName}.`);
         onOpenChange(false);
@@ -100,11 +137,32 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
     }
   }
 
+  function handleStartEditAmount() {
+    if (!gig || !worker) return;
+    setAmountDraft(String(overrideAmount ?? payableAmountForWorker(gig, worker)));
+    setEditingAmount(true);
+  }
+
+  function handleSaveAmount() {
+    const parsed = Number(amountDraft);
+    if (!amountDraft.trim() || Number.isNaN(parsed) || parsed < 0) {
+      toast.error("Enter a valid amount (0 or more).");
+      return;
+    }
+    setOverrideAmount(parsed);
+    setEditingAmount(false);
+  }
+
   async function handleConfirmCash() {
     if (!gig || !worker) return;
     setConfirming(true);
     try {
-      const result = await confirmCashPayment(gig, worker);
+      const result = await confirmCashPayment(
+        gig,
+        worker,
+        overrideAmount ?? undefined,
+        adjustmentReason.trim() || undefined
+      );
       if (result.ok) {
         setPaymentCode(result.paymentCode);
         setStep("code");
@@ -121,7 +179,8 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
     }
   }
 
-  const amount = gig ? salary(gig.currencyCode, gig.ratePerSlot) : "";
+  const effectiveAmount = gig && worker ? (overrideAmount ?? payableAmountForWorker(gig, worker)) : 0;
+  const amount = gig ? salary(gig.currencyCode, effectiveAmount) : "";
 
   return (
     <>
@@ -136,9 +195,54 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
             <DialogTitle>Select Payment Method</DialogTitle>
             <DialogDescription>{gig?.title}</DialogDescription>
           </DialogHeader>
-          <div className="rounded-lg bg-secondary px-3 py-2 text-center text-lg font-semibold text-ink">
-            {amount}
-          </div>
+
+          {editingAmount ? (
+            <div className="space-y-2 rounded-lg border border-hairline p-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="cash-amount-override">Amount</Label>
+                <Input
+                  id="cash-amount-override"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  value={amountDraft}
+                  onChange={(e) => setAmountDraft(e.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="cash-amount-reason">Reason (optional)</Label>
+                <Textarea
+                  id="cash-amount-reason"
+                  rows={2}
+                  value={adjustmentReason}
+                  onChange={(e) => setAdjustmentReason(e.target.value)}
+                  placeholder="e.g. worker left the gig early"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="icon-sm" aria-label="Cancel edit" onClick={() => setEditingAmount(false)}>
+                  <X className="size-4" />
+                </Button>
+                <Button size="icon-sm" aria-label="Save amount" onClick={handleSaveAmount}>
+                  <Check className="size-4" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 rounded-lg bg-secondary px-3 py-2 text-center text-lg font-semibold text-ink">
+              {amount}
+              <button
+                type="button"
+                aria-label="Adjust amount"
+                onClick={handleStartEditAmount}
+                className="text-muted transition-colors hover:text-ink"
+              >
+                <Pencil className="size-4" />
+              </button>
+            </div>
+          )}
+
           <p className="text-xs font-medium tracking-wide text-muted uppercase">Payment options</p>
           <button
             type="button"
@@ -252,6 +356,41 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
             </div>
             <p className="text-sm text-muted">{STAR_LABELS[selectedStars] || "Tap a star to rate"}</p>
           </div>
+
+          {selectedStars > 0 && (
+            <div className="w-full space-y-3">
+              <div className="flex flex-wrap justify-center gap-1.5">
+                {WORKER_RATING_TAGS.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => toggleTag(tag)}
+                    className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      selectedTags.includes(tag)
+                        ? "border-(--host-start) bg-(--host-tint) text-(--host-text)"
+                        : "border-hairline text-muted hover:bg-accent"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="rating-comment" className="text-xs text-muted">
+                  Optional — shown on their worker profile.
+                </Label>
+                <Textarea
+                  id="rating-comment"
+                  rows={2}
+                  maxLength={RATING_COMMENT_MAX_LENGTH}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                  placeholder="What was it like working with them?"
+                />
+              </div>
+            </div>
+          )}
+
           <AlertDialogFooter>
             <Button variant="outline" disabled={submittingRating} onClick={() => onOpenChange(false)}>
               Skip

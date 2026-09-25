@@ -13,6 +13,7 @@ import {
   ChevronDown,
   CreditCard,
   Heart,
+  Hourglass,
   MapPin,
   Navigation,
   User,
@@ -36,9 +37,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { capitalize, formatSchedule, salary } from "@/lib/gig-format";
+import { capitalize, formatDuration, formatSchedule, formatWorkDuration, payLabel, salary } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
+  payableAmountForWorker,
   selectApplicantForOpenGig,
   subscribeHostGigDetail,
   toggleFavoriteWorker,
@@ -300,8 +302,16 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
 
           <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             <StatTile icon={Users} label="Workers" value={`${gig.filledSlotCount} / ${gig.workerSlots}`} />
-            <StatTile icon={Wallet} label="Rate / worker" value={salary(gig.currencyCode, gig.ratePerSlot)} />
-            <StatTile icon={Banknote} label="Total budget" value={salary(gig.currencyCode, gig.budget)} />
+            <StatTile
+              icon={Wallet}
+              label="Rate / worker"
+              value={payLabel(gig.currencyCode, { payType: gig.payType, budget: gig.ratePerSlot, hourlyRate: gig.hourlyRate })}
+            />
+            <StatTile
+              icon={Banknote}
+              label={gig.payType === "hourly" ? "Estimated total" : "Total budget"}
+              value={gig.payType === "hourly" ? `${salary(gig.currencyCode, gig.budget)} (est.)` : payLabel(gig.currencyCode, gig)}
+            />
           </div>
 
           <div className="mt-6 grid gap-4 lg:grid-cols-5">
@@ -412,6 +422,20 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                                         <p className="text-xs text-muted">{formatSchedule(entry.at)}</p>
                                       </div>
                                     ))}
+                                  </div>
+                                )}
+                                {w.durationSeconds != null && (
+                                  <div className="mt-2 grid grid-cols-2 gap-3 border-t border-hairline pt-2">
+                                    <div>
+                                      <p className="text-xs text-muted">Worked Hours</p>
+                                      <p className="text-sm font-medium text-ink">{formatDuration(w.durationSeconds)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-xs text-muted">Final Payment</p>
+                                      <p className="text-sm font-medium text-ink">
+                                        {salary(gig.currencyCode, payableAmountForWorker(gig, w))}
+                                      </p>
+                                    </div>
                                   </div>
                                 )}
                                 {w.status === "task_complete" && (
@@ -531,11 +555,17 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                   <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                     <div>
                       <p className="text-xs text-muted">Rate / worker</p>
-                      <p className="font-semibold text-ink">{salary(gig.currencyCode, gig.ratePerSlot)}</p>
+                      <p className="font-semibold text-ink">
+                        {payLabel(gig.currencyCode, { payType: gig.payType, budget: gig.ratePerSlot, hourlyRate: gig.hourlyRate })}
+                      </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted">Total budget</p>
-                      <p className="font-semibold text-ink">{salary(gig.currencyCode, gig.budget)}</p>
+                      <p className="text-xs text-muted">{gig.payType === "hourly" ? "Estimated total" : "Total budget"}</p>
+                      <p className="font-semibold text-ink">
+                        {gig.payType === "hourly"
+                          ? `${salary(gig.currencyCode, gig.budget)} (est.)`
+                          : payLabel(gig.currencyCode, gig)}
+                      </p>
                     </div>
                     <div>
                       <p className="text-xs text-muted">Slots filled</p>
@@ -654,6 +684,23 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                       <p className="text-sm text-ink">{formatSchedule(gig.scheduledDate)}</p>
                     </div>
                   </div>
+                  {gig.workDurationHours !== undefined && (
+                    <>
+                      <Separator />
+                      <div className="flex items-start gap-2.5">
+                        <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted">
+                          <Hourglass className="size-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs text-muted">Work Duration</p>
+                          <p className="text-sm text-ink">
+                            {formatWorkDuration(gig.workDurationHours)}{" "}
+                            <span className="text-xs text-muted">estimate only, not a commitment</span>
+                          </p>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <Separator />
                   <div className="flex items-start gap-2.5">
                     <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary text-muted">

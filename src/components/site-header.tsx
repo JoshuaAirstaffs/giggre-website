@@ -46,7 +46,7 @@ export function SiteHeader({
         <div className="flex justify-between items-center w-full">
           <h1 className="text-base font-medium">{resolvedTitle}</h1>
           <div className="flex items-center gap-2">
-            {notifications && <NotificationBell />}
+            {notifications && <NotificationBell role={role} />}
             <ThemeToggle />
           </div>
         </div>

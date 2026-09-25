@@ -19,7 +19,20 @@ import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 
 export default function OpenGigForm() {
   const { authUser, profile } = useAppSelector((root) => root.user);
-  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, checkContent, getScheduledDate, currencyCode } = useCommonGigFields();
+  const {
+    fields,
+    setField,
+    setLocation,
+    locating,
+    captureLocation,
+    reset,
+    validateCommon,
+    checkContent,
+    getScheduledDate,
+    resolvePayFields,
+    resolveWorkDuration,
+    currencyCode,
+  } = useCommonGigFields();
   const [skills, setSkills] = useState<string[]>([]);
   const [requiredSkill, setRequiredSkill] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
@@ -47,7 +60,8 @@ export default function OpenGigForm() {
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
         description: fields.description.trim(),
-        budget: Number(fields.budget),
+        ...resolvePayFields(),
+        workDurationHours: resolveWorkDuration(),
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),

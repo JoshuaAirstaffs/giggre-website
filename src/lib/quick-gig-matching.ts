@@ -16,6 +16,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { GigLocation } from "@/lib/post-gig";
+import type { RatingAggregate } from "@/lib/ratings";
 
 // Direct TS port of quick_gig_matching_service.dart — the mobile app's
 // client-side quick-gig dispatch engine. It runs entirely as Firestore
@@ -63,6 +64,19 @@ async function fetchConfig(): Promise<MatchingConfig> {
       maxAttempts: DEFAULT_MAX_DISPATCH_ATTEMPTS,
       maxSearchRadiusKm: DEFAULT_MAX_SEARCH_RADIUS_KM,
     };
+  }
+}
+
+// Backs the worker Settings page's "Quick Gig Status" card — mirrors
+// worker_settings_screen.dart's `_fetchAdminConfig`, reading the same
+// quick_gig_config/decline_suspension doc for the free-decline threshold.
+export async function fetchDeclineSuspensionConfig(): Promise<{ freeDeclineLimit: number }> {
+  try {
+    const snap = await getDoc(doc(db, "quick_gig_config", "decline_suspension"));
+    const data = snap.data() ?? {};
+    return { freeDeclineLimit: (data.free_decline_limit as number | undefined) ?? 0 };
+  } catch {
+    return { freeDeclineLimit: 0 };
   }
 }
 
@@ -127,7 +141,13 @@ async function findBestWorker(
     if (dist > maxSearchRadiusKm) continue;
 
     const acceptanceRate = (data.acceptanceRate as number | undefined) ?? 1.0;
-    const rating = (data.ratingAsWorker as number | undefined) ?? 5.0;
+    // `shrunk` (Bayesian-shrunk toward the prior mean) is the aggregate's
+    // scoring-safe value — RatingSummary in the Flutter app documents this
+    // exact field as "for sorting and scoring only," a direct match for
+    // this matching algorithm. 4.6 (RATING_PRIOR_MEAN) matches the shrunk
+    // value an unrated worker would have.
+    const ratingWorker = data.ratingWorker as RatingAggregate | undefined;
+    const rating = ratingWorker?.shrunk ?? 4.6;
     const score = matchScore(dist, acceptanceRate, rating);
 
     if (score > bestScore) {

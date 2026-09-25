@@ -18,6 +18,8 @@ import {
 import { db } from "@/lib/firebase";
 import type { ActionResult } from "@/lib/browse-gigs";
 import { fetchHostCompletedEntries, type GigTypeKey } from "@/lib/earnings";
+import { hourlyPayAmount } from "@/lib/gig-format";
+import { ratingAverage, submitRating, type RatingAggregate } from "@/lib/ratings";
 
 export const HOST_GIG_COLLECTIONS: Record<GigTypeKey, string> = {
   quick: "quick_gigs",
@@ -49,6 +51,8 @@ export interface HostGig {
   title: string;
   status: string;
   budget: number;
+  payType: string;
+  hourlyRate: number | null;
   currencyCode: string;
   address: string;
   workerSlots: number;
@@ -96,6 +100,8 @@ function toHostGig(id: string, data: Record<string, unknown>, gigType: GigTypeKe
     title: (data.title as string) || "Gig",
     status,
     budget: ratePerSlot * workerSlots,
+    payType: (data.payType as string | undefined) ?? "flat",
+    hourlyRate: (data.hourlyRate as number | undefined) ?? null,
     currencyCode: (data.currencyCode as string) ?? "USD",
     address: (data.address as string) ?? "",
     workerSlots,
@@ -214,6 +220,13 @@ export interface HostGigWorkerEntry {
   // if they close it before the worker confirms, without generating a new
   // code (which would invalidate whatever the worker's already looking at).
   paymentCode: string | null;
+  // Written by the worker's mobile device at task_complete (_completeWork in
+  // working_ui.dart) — the only source of a real elapsed-work duration; this
+  // repo has no active-gig start/complete UI of its own, so it only ever
+  // reads this, never writes it. Needed here so payableAmountForWorker can
+  // compute an hourly gig's real payout instead of falling back to the flat
+  // estimate.
+  durationSeconds: number | null;
   // From users/{id}.isVerified — a string enum in Firestore
   // ('unverified' | 'pending' | 'verified' | 'rejected'), but the only
   // comparison the app itself ever makes is exact equality against
@@ -261,6 +274,9 @@ export interface HostGigDetail extends HostGig {
   location: { lat: number; lng: number } | null;
   ratePerSlot: number;
   slotsCompleted: number;
+  // Decorative only — never read by any pay calculation. See the field
+  // comment on CommonGigInput in post-gig.ts.
+  workDurationHours?: number;
   // quick_gigs only
   category?: string;
   duration?: string;
@@ -350,6 +366,7 @@ async function buildHostGigDetail(
       workStartedAt: (wd.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
       workerLocation: toLatLng(wd.workerLocation as GeoPoint | undefined),
       paymentCode: (wd.paymentCode as string | undefined) ?? null,
+      durationSeconds: (wd.durationSeconds as number | undefined) ?? null,
       isVerified: false,
       ratingAsWorker: 0,
       ratingCount: 0,
@@ -377,6 +394,7 @@ async function buildHostGigDetail(
           workStartedAt: (data.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
           workerLocation: toLatLng(data.workerLocation as GeoPoint | undefined),
           paymentCode: (data.paymentCode as string | undefined) ?? null,
+          durationSeconds: (data.durationSeconds as number | undefined) ?? null,
           isVerified: false,
           ratingAsWorker: 0,
           ratingCount: 0,
@@ -416,10 +434,11 @@ async function buildHostGigDetail(
         // SkillsCard.tsx's _SkillChip on the worker side).
         const skillsXP = (userData?.skillsXP as Record<string, number> | undefined) ?? {};
         const skillNames = Object.keys(skillsXP);
+        const ratingWorker = userData?.ratingWorker as RatingAggregate | undefined;
         profileCache.set(workerId, {
           photoUrl: (userData?.photoUrl as string | undefined) ?? "",
-          ratingAsWorker: (userData?.ratingAsWorker as number | undefined) ?? 0,
-          ratingCount: (userData?.ratingCount as number | undefined) ?? 0,
+          ratingAsWorker: ratingAverage(ratingWorker) ?? 0,
+          ratingCount: ratingWorker?.count ?? 0,
           skills: skillNames.length > 0 ? skillNames : ((userData?.skills as string[] | undefined) ?? []),
           isVerified: (userData?.isVerified as string | undefined) === "verified",
         });
@@ -516,6 +535,7 @@ async function buildHostGigDetail(
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     ratePerSlot: (data.ratePerSlot as number | undefined) ?? (data.budget as number | undefined) ?? 0,
     slotsCompleted,
+    workDurationHours: data.workDurationHours as number | undefined,
     category: data.category as string | undefined,
     duration: data.duration as string | undefined,
     requiredSkills: data.requiredSkills as string[] | undefined,
@@ -702,14 +722,35 @@ function generatePaymentCode(): string {
   return Array.from({ length: 6 }, () => Math.floor(Math.random() * 10)).join("");
 }
 
+// What this worker is actually owed — hourlyPayAmount using their real
+// tracked durationSeconds (written by the mobile app at task_complete, see
+// the field comment on HostGigWorkerEntry) for hourly gigs, or the flat
+// ratePerSlot otherwise. Mirrors the same payableAmount logic host-side
+// widgets in the Flutter app compute (gig_progress_tracker.dart,
+// gig_detail_sheet.dart) via hourlyPayAmount in active_gig_step.dart.
+export function payableAmountForWorker(gig: HostGigDetail, worker: HostGigWorkerEntry): number {
+  if (gig.payType === "hourly" && gig.hourlyRate != null && worker.durationSeconds != null) {
+    return hourlyPayAmount(gig.hourlyRate, worker.durationSeconds);
+  }
+  return gig.ratePerSlot;
+}
+
 // Mirrors the host's "Confirm Cash Payment" write (gig_detail_sheet.dart's
 // _confirmCompleted / _confirmWorkerSlotCompleted) — the host is declaring
 // they paid the worker cash in person; the generated code is then shown to
 // the worker (QR + digits) so they can confirm receipt on their end (mobile
 // app today — the worker-side "enter code" step isn't built on web yet).
+// `overrideAmount`/`adjustmentReason` mirror PaymentSelectionSheet's manual
+// amount edit (payment_selection_sheet.dart) — the host can override the
+// calculated amount before confirming, with an always-optional reason.
+// Validation matches Flutter exactly: reject negative/unparseable, allow
+// $0, no upper bound (enforced by the caller, CashPaymentDialog.tsx, before
+// this is ever called).
 export async function confirmCashPayment(
   gig: HostGigDetail,
-  worker: HostGigWorkerEntry
+  worker: HostGigWorkerEntry,
+  overrideAmount?: number,
+  adjustmentReason?: string
 ): Promise<CashPaymentResult> {
   const collectionName = HOST_GIG_COLLECTIONS[gig.gigType];
   const paymentCode = generatePaymentCode();
@@ -717,6 +758,14 @@ export async function confirmCashPayment(
     gig.workerSlots > 1
       ? doc(db, collectionName, gig.id, "workers", worker.workerId)
       : doc(db, collectionName, gig.id);
+  // Persisted here rather than left transient — this is the one write point
+  // this repo has anywhere in the payment chain (finalizing to "completed"
+  // is mobile-only, see confirmCashPayment's doc comment), so it's the only
+  // chance to record the real hourly-computed amount instead of the flat
+  // estimate. Read back by earnings.ts in preference to budget/rate.
+  const calculatedAmount = payableAmountForWorker(gig, worker);
+  const finalAmount = overrideAmount ?? calculatedAmount;
+  const wasAdjusted = overrideAmount !== undefined && overrideAmount !== calculatedAmount;
 
   try {
     await Promise.all([
@@ -725,6 +774,13 @@ export async function confirmCashPayment(
         paymentMethod: "cash",
         paymentCode,
         paymentInitiatedAt: serverTimestamp(),
+        finalAmount,
+        // `adjustedAmount` is just a marker that finalAmount was overridden
+        // (same value, not a distinct number) — matches gig_detail_sheet.dart:
+        // there's no persisted "originally calculated" field either, since
+        // that's always re-derivable from ratePerSlot/hourlyRate.
+        ...(wasAdjusted ? { adjustedAmount: finalAmount } : {}),
+        ...(adjustmentReason?.trim() ? { amountAdjustmentReason: adjustmentReason.trim() } : {}),
       }),
       updateDoc(doc(db, "users", worker.workerId), { slot: "AVAILABLE" }),
     ]);
@@ -773,37 +829,35 @@ export async function toggleFavoriteWorker(
   }
 }
 
-// Mirrors _RatingDialog._submit in gig_detail_sheet.dart — shown right after
-// a payment is confirmed. Same client-side read-modify-write running average
-// (not a transaction, matching the app — a real race exists if two hosts
-// rate the same worker at once, same as production) seeded at 5.0/0 for a
-// worker with no prior rating.
+// Shown right after a payment is confirmed. Writes to the shared `ratings`
+// collection (see ratings.ts) — the same Cloud Function
+// (functions/src/ratings.ts onRatingCreated) that aggregates the Flutter
+// app's ratings aggregates this too, into users/{workerId}.ratingWorker.
+// This used to write hostRating/hostRatedAt directly onto the gig/slot doc
+// plus a client-side running average onto the user doc — neither is read
+// or written by anything in the current app anymore (see ratings.ts's own
+// comment), so that path is gone entirely rather than kept alongside this.
 export async function rateWorker(
   gig: HostGigDetail,
   worker: HostGigWorkerEntry,
-  stars: number
+  raterId: string,
+  raterName: string,
+  stars: number,
+  tags: string[],
+  comment: string
 ): Promise<ActionResult> {
-  const collectionName = HOST_GIG_COLLECTIONS[gig.gigType];
-  const targetRef =
-    gig.workerSlots > 1
-      ? doc(db, collectionName, gig.id, "workers", worker.workerId)
-      : doc(db, collectionName, gig.id);
-  const workerRef = doc(db, "users", worker.workerId);
-
-  try {
-    const workerSnap = await getDoc(workerRef);
-    const workerData = workerSnap.data();
-    const currentRating = (workerData?.ratingAsWorker as number | undefined) ?? 5;
-    const currentCount = (workerData?.ratingCount as number | undefined) ?? 0;
-    const newCount = currentCount + 1;
-    const newRating = Number((((currentRating * currentCount) + stars) / newCount).toFixed(2));
-
-    await Promise.all([
-      updateDoc(workerRef, { ratingAsWorker: newRating, ratingCount: newCount }),
-      updateDoc(targetRef, { hostRating: stars, hostRatedAt: serverTimestamp() }),
-    ]);
-    return { ok: true };
-  } catch (err) {
-    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't submit this rating." };
-  }
+  return submitRating({
+    raterId,
+    raterName,
+    rateeId: worker.workerId,
+    rateeName: worker.workerName,
+    rateeRole: "worker",
+    gigId: gig.id,
+    gigCollection: HOST_GIG_COLLECTIONS[gig.gigType],
+    gigTitle: gig.title,
+    ...(gig.workerSlots > 1 ? { slotWorkerId: worker.workerId } : {}),
+    stars,
+    tags,
+    comment,
+  });
 }

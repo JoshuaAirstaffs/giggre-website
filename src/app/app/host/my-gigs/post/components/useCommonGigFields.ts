@@ -4,13 +4,25 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { countryCodeFromCoordinates } from "@/lib/browse-gigs";
 import { CONTENT_REJECTION_MESSAGE, containsBlockedContent } from "@/lib/content-filter";
-import { currencyCodeForCountry, reverseGeocode, type GigLocation } from "@/lib/post-gig";
+import { currencyCodeForCountry, reverseGeocode, type GigLocation, type PayType } from "@/lib/post-gig";
 import { useAppSelector } from "@/store/hooks";
 
 export interface CommonGigFieldsState {
   title: string;
   description: string;
+  // The rate the host types — a flat per-worker amount when payType is
+  // "flat", or an hourly rate when "hourly" (same input, just relabeled —
+  // see CommonGigFields.tsx). resolvePayFields below turns this into the
+  // actual `budget` stored on the doc.
   budget: string;
+  payType: PayType;
+  // Form-only — never persisted (matches giggre_app: post_quick_gig_screen.dart
+  // computes budget = rate * estimatedHours the same way but never writes
+  // estimatedHours itself). Only meaningful when payType is "hourly".
+  estimatedHours: string;
+  // Purely informational (see workDurationHours on CommonGigInput in
+  // post-gig.ts) — optional, no validation, decimal allowed.
+  workDurationHours: string;
   workerSlots: string;
   // Matches giggre_app's own schema exactly (post_*_gig_screen.dart's
   // _pickDate/_pickTime, combined into a single `scheduledDate` — the app
@@ -30,6 +42,9 @@ const emptyCommonFields: CommonGigFieldsState = {
   title: "",
   description: "",
   budget: "",
+  payType: "flat",
+  estimatedHours: "",
+  workDurationHours: "",
   workerSlots: "1",
   scheduledDate: "",
   scheduledTime: "",
@@ -136,9 +151,15 @@ export function useCommonGigFields() {
   function validateCommon(): string | null {
     if (!fields.title.trim()) return "Please enter a title.";
     if (!fields.description.trim()) return "Please enter a description.";
-    const budget = Number(fields.budget);
-    if (!fields.budget.trim() || Number.isNaN(budget) || budget <= 0) {
-      return "Please enter a valid budget.";
+    const rate = Number(fields.budget);
+    if (!fields.budget.trim() || Number.isNaN(rate) || rate <= 0) {
+      return fields.payType === "hourly" ? "Please enter a valid hourly rate." : "Please enter a valid budget.";
+    }
+    if (fields.payType === "hourly") {
+      const estimatedHours = Number(fields.estimatedHours);
+      if (!fields.estimatedHours.trim() || Number.isNaN(estimatedHours) || estimatedHours <= 0) {
+        return "Please enter the estimated hours.";
+      }
     }
     const workerSlots = Number(fields.workerSlots);
     if (!fields.workerSlots.trim() || Number.isNaN(workerSlots) || workerSlots < 1) {
@@ -179,6 +200,29 @@ export function useCommonGigFields() {
 
   const currencyCode = currencyCodeForCountry(fields.countryCode);
 
+  // Turns the composer's rate/payType/estimatedHours into what actually gets
+  // persisted — one place so QuickGigForm/OpenGigForm/OfferedGigForm don't
+  // each re-derive the hourly-estimate math themselves. Matches
+  // post_quick_gig_screen.dart's isHourly branch: budget is always the
+  // estimate (rate * estimatedHours for hourly), hourlyRate is the only
+  // field that carries the real rate forward.
+  function resolvePayFields(): { budget: number; payType: PayType; hourlyRate: number | null } {
+    const rate = Number(fields.budget);
+    if (fields.payType === "hourly") {
+      const estimatedHours = Number(fields.estimatedHours);
+      return { budget: rate * estimatedHours, payType: "hourly", hourlyRate: rate };
+    }
+    return { budget: rate, payType: "flat", hourlyRate: null };
+  }
+
+  // Blank stays omitted entirely (undefined), not written as 0/null — see
+  // the field comment on CommonGigInput in post-gig.ts.
+  function resolveWorkDuration(): number | undefined {
+    if (!fields.workDurationHours.trim()) return undefined;
+    const hours = Number(fields.workDurationHours);
+    return Number.isNaN(hours) ? undefined : hours;
+  }
+
   return {
     fields,
     setField,
@@ -189,6 +233,8 @@ export function useCommonGigFields() {
     validateCommon,
     checkContent,
     getScheduledDate,
+    resolvePayFields,
+    resolveWorkDuration,
     currencyCode,
   };
 }

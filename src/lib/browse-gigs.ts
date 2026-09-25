@@ -22,6 +22,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { fetchHostCompletedEntries } from "@/lib/earnings";
+import { ratingAverage, type RatingAggregate } from "@/lib/ratings";
 
 // Mirrors the worker app's gigs-near-you feed — see
 // giggre_app/lib/features/gig_worker/presentation/widgets/gig_map_section.dart
@@ -42,6 +43,8 @@ export interface Gig {
   title: string;
   description: string;
   budget: number;
+  payType: string;
+  hourlyRate: number | null;
   currencyCode: string;
   status: string;
   hostName: string;
@@ -56,6 +59,9 @@ export interface Gig {
   createdAt: Date | null;
   workerSlots: number;
   filledSlotCount: number;
+  // Decorative only — never read by any pay calculation. See the field
+  // comment on CommonGigInput in post-gig.ts.
+  workDurationHours?: number;
 }
 
 export interface HostLookupResult {
@@ -82,6 +88,7 @@ export async function fetchHostByUid(uid: string): Promise<HostLookupResult | nu
   const [snap, completedEntries] = await Promise.all([getDoc(doc(db, "users", uid)), fetchHostCompletedEntries(uid)]);
   if (!snap.exists()) return null;
   const data = snap.data();
+  const ratingHost = data.ratingHost as RatingAggregate | undefined;
   return {
     uid: snap.id,
     userId: (data.userId as string) ?? "",
@@ -90,8 +97,8 @@ export async function fetchHostByUid(uid: string): Promise<HostLookupResult | nu
     bio: (data.bio as string) ?? "",
     company: (data.company as string) ?? "",
     photoUrl: (data.photoUrl as string) ?? "",
-    ratingAsHost: (data.ratingAsHost as number | undefined) ?? 0,
-    ratingCount: (data.ratingCount as number | undefined) ?? 0,
+    ratingAsHost: ratingAverage(ratingHost) ?? 0,
+    ratingCount: ratingHost?.count ?? 0,
     isOnline: (data.isOnline as boolean | undefined) ?? false,
     isVerified: (data.isVerified as string | undefined) === "verified",
     completedGigCount: completedEntries.length,
@@ -128,6 +135,8 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     title: (data.title as string) || (gigType === "open" ? "Open Gig" : "Offered Gig"),
     description: (data.description as string) ?? "",
     budget: (data.budget as number) ?? 0,
+    payType: (data.payType as string | undefined) ?? "flat",
+    hourlyRate: (data.hourlyRate as number | undefined) ?? null,
     currencyCode: (data.currencyCode as string) ?? "USD",
     status: (data.status as string) ?? "",
     hostName: (data.hostName as string) ?? "",
@@ -142,6 +151,7 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? null,
     workerSlots: (data.workerSlots as number) ?? 1,
     filledSlotCount: (data.filledSlotCount as number) ?? 0,
+    workDurationHours: (data.workDurationHours as number | undefined) ?? undefined,
   };
 }
 
@@ -350,6 +360,8 @@ export interface AcceptedApplication {
   title: string;
   hostName: string;
   budget: number;
+  payType: string;
+  hourlyRate: number | null;
   currencyCode: string;
   address: string;
   status: string;
@@ -391,6 +403,8 @@ export function subscribeAcceptedApplications(
           title: (data.title as string) || "Open Gig",
           hostName: (data.hostName as string) ?? "",
           budget: (data.budget as number) ?? 0,
+          payType: (data.payType as string | undefined) ?? "flat",
+          hourlyRate: (data.hourlyRate as number | undefined) ?? null,
           currencyCode: (data.currencyCode as string) ?? "USD",
           address: (data.address as string) ?? "",
           status: (data.status as string) ?? "",
@@ -425,6 +439,8 @@ export function subscribeAcceptedApplications(
             title: (gigData.title as string) || "Open Gig",
             hostName: (slot.hostName as string) ?? (gigData.hostName as string) ?? "",
             budget: (slot.rate as number) ?? 0,
+            payType: (gigData.payType as string | undefined) ?? "flat",
+            hourlyRate: (gigData.hourlyRate as number | undefined) ?? null,
             currencyCode: (slot.currencyCode as string) ?? (gigData.currencyCode as string) ?? "USD",
             address: (gigData.address as string) ?? "",
             status: (slot.status as string) ?? "",

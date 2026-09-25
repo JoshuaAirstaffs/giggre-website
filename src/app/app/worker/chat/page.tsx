@@ -6,7 +6,7 @@ import ChatPage from "@/components/ChatPage";
 export default function WorkerChatPage() {
   return (
     <Suspense fallback={null}>
-      <ChatPage />
+      <ChatPage role="worker" />
     </Suspense>
   );
 }

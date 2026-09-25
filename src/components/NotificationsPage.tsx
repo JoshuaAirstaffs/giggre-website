@@ -14,11 +14,12 @@ import { NOTIFICATIONS_FETCH_LIMIT, timeAgo } from "@/lib/notifications";
 // full history behind the NotificationBell dropdown, which only ever shows
 // the 20 most recent. Same data source (useNotifications), just requesting
 // everything the underlying query fetches instead of the bell's slice.
-export default function NotificationsPage() {
+export default function NotificationsPage({ role }: { role?: "host" | "worker" }) {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
   const { notifications, readIds, markAsRead, markAllAsRead, unreadCount, loading, error } = useNotifications(
     uid,
-    NOTIFICATIONS_FETCH_LIMIT
+    NOTIFICATIONS_FETCH_LIMIT,
+    role
   );
 
   return (

@@ -37,6 +37,53 @@ export function salary(currency?: string, budget?: number) {
   return `${currencySymbol(currency)}${budget.toLocaleString()}`;
 }
 
+// `payType`/`budget`/`hourlyRate` shows up on every gig/application/detail
+// type — a shared shape so callers don't each re-derive "hourly or flat"
+// themselves.
+export interface GigPay {
+  payType?: string;
+  budget: number;
+  hourlyRate?: number | null;
+}
+
+// Nearest-minute rounding, matching hourlyPayAmount in the Flutter app's
+// active_gig_step.dart exactly — the one source of truth for turning
+// tracked work duration into an hourly payout.
+export function hourlyPayAmount(hourlyRate: number, durationSeconds: number): number {
+  const roundedMinutes = Math.round(durationSeconds / 60);
+  return hourlyRate * (roundedMinutes / 60);
+}
+
+export function payAmount(pay: GigPay): number {
+  return pay.payType === "hourly" && pay.hourlyRate != null ? pay.hourlyRate : pay.budget;
+}
+
+export function paySuffix(pay: GigPay): "/hr" | "/day" {
+  return pay.payType === "hourly" ? "/hr" : "/day";
+}
+
+export function payLabel(currency: string | undefined, pay: GigPay): string {
+  return `${salary(currency, payAmount(pay))}${paySuffix(pay)}`;
+}
+
+// "~4 hrs", "~1.5 hrs" — decorative only, never fed into any pay
+// calculation. `hours` already comes in as whatever the host typed
+// (e.g. 4 or 1.5), so plain interpolation trims trailing zeros for free.
+export function formatWorkDuration(hours: number): string {
+  return `~${hours} hr${hours === 1 ? "" : "s"}`;
+}
+
+// "2h 15m" / "45m" — a completed, static work duration (rounds to the
+// nearest minute, same as hourlyPayAmount above). Distinct from
+// formatElapsed, which renders a live ticking MM:SS/H:MM:SS clock instead.
+export function formatDuration(durationSeconds: number): string {
+  const totalMinutes = Math.round(durationSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
+
 export function capitalize(word?: string) {
   if (!word) return "";
   return word.charAt(0).toUpperCase() + word.slice(1);

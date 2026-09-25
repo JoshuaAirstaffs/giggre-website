@@ -14,9 +14,13 @@ import { useAppSelector } from "@/store/hooks";
 import { useNotifications } from "@/hooks/use-notifications";
 import { timeAgo } from "@/lib/notifications";
 
-export default function NotificationBell() {
+export default function NotificationBell({ role }: { role?: "host" | "worker" }) {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
-  const { notifications, readIds, markAsRead, markAllAsRead, unreadCount, loading, error } = useNotifications(uid);
+  const { notifications, readIds, markAsRead, markAllAsRead, unreadCount, loading, error } = useNotifications(
+    uid,
+    undefined,
+    role
+  );
 
   return (
     <DropdownMenu>

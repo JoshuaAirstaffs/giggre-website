@@ -28,7 +28,7 @@ function saveReadIds(uid: string, ids: Set<string>) {
   }
 }
 
-export function useNotifications(uid: string | undefined, displayLimit?: number) {
+export function useNotifications(uid: string | undefined, displayLimit?: number, role?: "host" | "worker") {
   const [notifications, setNotifications] = useState<NotificationEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -82,11 +82,12 @@ export function useNotifications(uid: string | undefined, displayLimit?: number)
         setError("Couldn't load notifications.");
         setLoading(false);
       },
-      displayLimit
+      displayLimit,
+      role
     );
 
     return unsubscribe;
-  }, [uid, displayLimit]);
+  }, [uid, displayLimit, role]);
 
   function markAsRead(id: string) {
     if (!uid) return;

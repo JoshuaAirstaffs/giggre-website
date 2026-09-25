@@ -16,6 +16,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { ratingAverage, type RatingAggregate } from "@/lib/ratings";
 
 // Mirrors the host app's gig-posting flow — see
 // giggre_app/lib/features/gig_host/models/{quick,open,offered}_gig_model.dart
@@ -37,6 +38,8 @@ export interface GigLocation {
   lng: number;
 }
 
+export type PayType = "flat" | "hourly";
+
 export interface CommonGigInput {
   hostId: string;
   hostName: string;
@@ -48,6 +51,20 @@ export interface CommonGigInput {
   address: string;
   scheduledDate: Date | null;
   workerSlots: number;
+  // `budget` (and ratePerSlot/rate below) is always the per-worker amount —
+  // for hourly gigs it's the ESTIMATE (hourlyRate * estimated hours, see
+  // resolvePayFields in useCommonGigFields.ts), never persisted separately.
+  // `hourlyRate` is the only new source of truth for what a worker is
+  // actually owed; see payableAmountForWorker in host-gigs.ts. Matches
+  // giggre_app's *_gig_model.dart field names exactly.
+  payType: PayType;
+  hourlyRate: number | null;
+  // Purely informational — a rough heads-up for workers, never read by any
+  // pay/payout calculation (that stays either the flat budget or
+  // hourlyRate * actually-tracked duration, unaffected by this field).
+  // Optional: omitted entirely from the write when the host leaves it
+  // blank, rather than writing 0/null.
+  workDurationHours?: number;
 }
 
 function commonGigFields(input: CommonGigInput) {
@@ -64,6 +81,9 @@ function commonGigFields(input: CommonGigInput) {
     ...(input.scheduledDate ? { scheduledDate: Timestamp.fromDate(input.scheduledDate) } : {}),
     workerSlots: input.workerSlots,
     ratePerSlot: input.budget,
+    payType: input.payType,
+    hourlyRate: input.hourlyRate,
+    ...(input.workDurationHours !== undefined ? { workDurationHours: input.workDurationHours } : {}),
     filledSlotCount: 0,
     slotsCompleted: 0,
   };
@@ -141,6 +161,8 @@ export async function postOfferedGig(input: OfferedGigInput): Promise<string> {
         hostId: input.hostId,
         hostName: input.hostName,
         rate: input.budget,
+        payType: input.payType,
+        hourlyRate: input.hourlyRate,
         currencyCode: input.currencyCode,
         status: "offered",
         offeredAt: serverTimestamp(),
@@ -168,14 +190,15 @@ export interface WorkerLookupResult {
 
 function toWorkerLookupResult(uid: string, data: Record<string, unknown>): WorkerLookupResult {
   const earnings = data.earnings as Record<string, unknown> | undefined;
+  const ratingWorker = data.ratingWorker as RatingAggregate | undefined;
   return {
     uid,
     userId: (data.userId as string) ?? "",
     name: (data.name as string) || "Unknown",
     email: (data.email as string) ?? "",
     photoUrl: (data.photoUrl as string) ?? "",
-    ratingAsWorker: (data.ratingAsWorker as number | undefined) ?? 0,
-    ratingCount: (data.ratingCount as number | undefined) ?? 0,
+    ratingAsWorker: ratingAverage(ratingWorker) ?? 0,
+    ratingCount: ratingWorker?.count ?? 0,
     skills: (data.skills as string[] | undefined) ?? [],
     isOnline: (data.isOnline as boolean | undefined) ?? false,
     isVerified: (data.isVerified as string | undefined) === "verified",

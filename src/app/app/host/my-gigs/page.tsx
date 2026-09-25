@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppSelector } from "@/store/hooks";
-import { capitalize, formatSchedule, salary } from "@/lib/gig-format";
+import { capitalize, formatSchedule, payLabel } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import { fetchHostGigs, OPEN_CARD_STATUSES, type HostGig } from "@/lib/host-gigs";
 
@@ -235,7 +235,7 @@ export default function MyGigsPage() {
                         <TableCell>
                           <GigStatusLabel status={gig.status} />
                         </TableCell>
-                        <TableCell>{salary(gig.currencyCode, gig.budget)}</TableCell>
+                        <TableCell>{payLabel(gig.currencyCode, gig)}</TableCell>
                         <TableCell>
                           {gig.filledSlotCount}/{gig.workerSlots}
                         </TableCell>

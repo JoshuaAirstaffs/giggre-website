@@ -90,11 +90,37 @@ export function CommonGigDetails({
         />
       </div>
 
+      <div className="space-y-1.5">
+        <Label>Pay type</Label>
+        <div className="flex gap-2">
+          {(["flat", "hourly"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setField("payType", value)}
+              className={
+                value === fields.payType
+                  ? "flex-1 rounded-lg border border-worker bg-worker-tint py-2 text-center text-xs font-bold text-(--worker-text)"
+                  : "flex-1 rounded-lg border border-hairline py-2 text-center text-xs text-muted"
+              }
+            >
+              {value === "flat" ? "Flat Rate" : "Hourly Rate"}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="flex gap-3">
         <div className="flex-1 space-y-1.5">
           <Label htmlFor="gig-budget">
-            Budget per worker <span className="text-destructive">*</span>
+            {fields.payType === "hourly" ? "Hourly Rate (per hour)" : "Budget per worker"}{" "}
+            <span className="text-destructive">*</span>
           </Label>
+          <p className="text-xs text-muted">
+            {fields.payType === "hourly"
+              ? "How much you'll pay per hour worked — the final payout is based on actual tracked time."
+              : "Total amount you'll pay for this gig, regardless of how long it takes."}
+          </p>
           <div className="relative">
             <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-muted-foreground">
               {currencySymbol(currencyCode)}
@@ -125,6 +151,47 @@ export function CommonGigDetails({
           )}
         </div>
       </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="gig-work-duration">Work Duration (optional)</Label>
+        <p className="text-xs text-muted">
+          Roughly how long this gig will take — just a heads-up for workers, not a minimum or a commitment.
+        </p>
+        <div className="relative">
+          <span className="pointer-events-none absolute top-1/2 left-2.5 -translate-y-1/2 text-sm text-muted-foreground">
+            ~
+          </span>
+          <Input
+            id="gig-work-duration"
+            type="number"
+            min={0}
+            step="0.5"
+            className="pl-6"
+            value={fields.workDurationHours}
+            onChange={(e) => setField("workDurationHours", e.target.value)}
+            placeholder="e.g. 4"
+          />
+        </div>
+      </div>
+
+      {fields.payType === "hourly" && (
+        <div className="space-y-1.5">
+          <Label htmlFor="gig-estimated-hours">
+            Estimated Hours <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="gig-estimated-hours"
+            type="number"
+            min={0}
+            value={fields.estimatedHours}
+            onChange={(e) => setField("estimatedHours", e.target.value)}
+            placeholder="0"
+          />
+          <p className="text-xs text-muted">
+            Used only to show an estimated total — the worker is actually paid for their real tracked time.
+          </p>
+        </div>
+      )}
 
       {afterBudget}
     </div>

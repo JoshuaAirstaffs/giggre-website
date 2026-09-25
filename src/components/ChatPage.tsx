@@ -3,7 +3,23 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Ban, Check, CheckCheck, Flag, Loader2, MessageCircle, MoreVertical, Plus, Search, Send, Trash2 } from "lucide-react";
+import {
+  Ban,
+  Check,
+  CheckCheck,
+  File as FileIcon,
+  Flag,
+  Loader2,
+  MapPin,
+  MessageCircle,
+  MoreVertical,
+  Paperclip,
+  Plus,
+  Search,
+  Send,
+  Trash2,
+  Zap,
+} from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +31,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import TitlePage from "@/components/TitlePage";
+// Reused as-is for the location-message bubble below — same read-only,
+// single-pin map used for a gig's fixed location, no giggre_app equivalent
+// to mirror instead.
+import GigLocationMap from "@/app/app/host/my-gigs/components/GigLocationMap";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
 import { fetchFavoriteWorkers, type WorkerLookupResult } from "@/lib/post-gig";
@@ -23,6 +44,8 @@ import { CONTENT_REJECTION_MESSAGE, containsBlockedContent } from "@/lib/content
 import { unblockUser } from "@/lib/blocked-users";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
+  attachmentTypeForFile,
+  ATTACHMENT_MAX_BYTES,
   deleteMessage,
   directMessageRoomId,
   fetchChatPeer,
@@ -30,7 +53,9 @@ import {
   markRoomMessagesSeen,
   otherParticipant,
   OLDER_MESSAGES_PAGE_SIZE,
+  sendAttachmentMessage,
   sendDirectMessage,
+  sendLocationMessage,
   subscribeChatRooms,
   subscribeMessages,
   subscribeRoomUnread,
@@ -40,6 +65,31 @@ import {
 } from "@/lib/chat";
 
 const SCROLL_TOP_THRESHOLD = 80;
+// No giggre_app precedent for this (canned replies don't exist on mobile),
+// so this is a web-original addition — same combined list on both sides,
+// same as Share Location. One tap sends immediately; doesn't touch
+// whatever's already typed in the composer.
+const QUICK_REPLIES = [
+  "On my way",
+  "I've arrived",
+  "Running a few minutes late",
+  "On it!",
+  "All done",
+  "Thanks!",
+  "Thanks for the update",
+  "Can you confirm your ETA?",
+  "Sounds good",
+  "Great work, thank you!",
+  "Please see the gig details",
+  "Let me know if anything changes",
+];
+// Senders can only delete a message while it's still fresh — mirrors the
+// giggre_app chat screen's `_deleteWindow`.
+const DELETE_WINDOW_MS = 2 * 60 * 1000;
+
+function withinDeleteWindow(createdAt: Date) {
+  return Date.now() - createdAt.getTime() <= DELETE_WINDOW_MS;
+}
 
 function timeLabel(date: Date | null) {
   if (!date) return "";
@@ -106,7 +156,7 @@ function ChatRoomRow({
 // src/lib/chat.ts), so a conversation started here is visible in the
 // mobile app too. Gig-scoped chat rooms and support tickets share the same
 // collection/shape but aren't created from here.
-export default function ChatPage() {
+export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   const { authUser, profile } = useAppSelector((root) => root.user);
   const myUid = authUser?.uid;
   const myName = profile?.name || authUser?.displayName || "Me";
@@ -132,6 +182,10 @@ export default function ChatPage() {
   const [hasMoreOlder, setHasMoreOlder] = useState(true);
   const [messageText, setMessageText] = useState("");
   const [sending, setSending] = useState(false);
+  const [sharingLocation, setSharingLocation] = useState(false);
+  const [quickRepliesOpen, setQuickRepliesOpen] = useState(false);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [newChatOpen, setNewChatOpen] = useState(false);
   const [newChatQuery, setNewChatQuery] = useState("");
@@ -461,8 +515,11 @@ export default function ChatPage() {
     setNewChatQuery("");
   }
 
-  async function handleSend() {
-    const text = messageText.trim();
+  // `quickReply` bypasses the composer entirely (used by the quick-reply
+  // chips below) — the composer's own draft text is left alone either way,
+  // so tapping a chip never clobbers something the user was mid-typing.
+  async function handleSend(quickReply?: string) {
+    const text = (quickReply ?? messageText).trim();
     if (!text || !myUid || !activePeer || !activeRoomId) return;
     // Mirrors chat.dart's _sendMessage: checked before clearing the composer,
     // so a blocked message stays in the input for the user to revise.
@@ -471,7 +528,7 @@ export default function ChatPage() {
       return;
     }
     setSending(true);
-    setMessageText("");
+    if (!quickReply) setMessageText("");
     try {
       await sendDirectMessage({
         roomId: activeRoomId,
@@ -484,9 +541,80 @@ export default function ChatPage() {
     } catch (err) {
       console.error("Failed to send message:", err);
       toast.error("Couldn't send that message. Please try again.");
-      setMessageText(text);
+      if (!quickReply) setMessageText(text);
     } finally {
       setSending(false);
+    }
+  }
+
+  // Available to both roles — see the `location` field comment on
+  // ChatMessage in chat.ts. A one-time reading, not a subscription, so
+  // there's nothing to clean up afterward.
+  function handleShareLocation() {
+    if (!myUid || !activePeer || !activeRoomId || sharingLocation) return;
+    if (!navigator.geolocation) {
+      toast.error("Location isn't available on this device.");
+      return;
+    }
+    setSharingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        try {
+          await sendLocationMessage({
+            roomId: activeRoomId,
+            senderId: myUid,
+            senderName: myName,
+            peerUid: activePeer.uid,
+            peerName: activePeer.name,
+            lat: position.coords.latitude,
+            lng: position.coords.longitude,
+          });
+        } catch (err) {
+          console.error("Failed to share location:", err);
+          toast.error("Couldn't share your location. Please try again.");
+        } finally {
+          setSharingLocation(false);
+        }
+      },
+      (err) => {
+        console.error("Geolocation error:", err);
+        toast.error(
+          err.code === err.PERMISSION_DENIED ? "Location permission denied." : "Couldn't get your location."
+        );
+        setSharingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10_000 }
+    );
+  }
+
+  // Available to both roles — see the `attachment` field comment on
+  // ChatMessage in chat.ts. One file at a time; the size cap is enforced
+  // again inside sendAttachmentMessage, but checking here first avoids an
+  // upload attempt that's going to be rejected anyway.
+  async function handleAttachmentSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !myUid || !activePeer || !activeRoomId || uploadingAttachment) return;
+    const maxBytes = ATTACHMENT_MAX_BYTES[attachmentTypeForFile(file)];
+    if (file.size > maxBytes) {
+      toast.error(`That file is too large — the limit is ${Math.round(maxBytes / (1024 * 1024))}MB.`);
+      return;
+    }
+    setUploadingAttachment(true);
+    try {
+      await sendAttachmentMessage({
+        roomId: activeRoomId,
+        senderId: myUid,
+        senderName: myName,
+        peerUid: activePeer.uid,
+        peerName: activePeer.name,
+        file,
+      });
+    } catch (err) {
+      console.error("Failed to send attachment:", err);
+      toast.error(err instanceof Error ? err.message : "Couldn't send that attachment. Please try again.");
+    } finally {
+      setUploadingAttachment(false);
     }
   }
 
@@ -550,6 +678,11 @@ export default function ChatPage() {
 
   async function handleDeleteMessage() {
     if (!activeRoomId || !deleteTarget || deletingMessage) return;
+    if (!withinDeleteWindow(deleteTarget.createdAt)) {
+      toast.error("You can only delete a message within 2 minutes of sending it.");
+      setDeleteTarget(null);
+      return;
+    }
     setDeletingMessage(true);
     const deletedId = deleteTarget.id;
     try {
@@ -574,6 +707,9 @@ export default function ChatPage() {
   return (
     <>
     <div className="flex h-[calc(100svh-var(--header-height))] min-h-0 flex-col overflow-hidden p-4">
+      <div className="mb-4 shrink-0">
+        <TitlePage title="Chat" description="Message hosts and workers about your gigs" />
+      </div>
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-hairline">
         <div className="flex min-h-0 w-full max-w-xs shrink-0 flex-col border-r border-hairline">
           <div className="flex items-center gap-2 border-b border-hairline p-3">
@@ -709,7 +845,7 @@ export default function ChatPage() {
                       const mine = message.senderId === myUid;
                       const avatarName = mine ? myName : activePeer.name;
                       const avatarPhotoUrl = mine ? profile?.photoUrl : activePeer.photoUrl;
-                      const canDelete = mine && !message.isDeleted;
+                      const canDelete = mine && !message.isDeleted && withinDeleteWindow(message.createdAt);
                       return (
                         <Message key={message.id} align={mine ? "end" : "start"}>
                           <MessageAvatar>
@@ -737,6 +873,49 @@ export default function ChatPage() {
                               >
                                 {message.isDeleted ? (
                                   <p className="text-xs italic">Message has been removed</p>
+                                ) : message.location ? (
+                                  <div className="w-56 space-y-1.5">
+                                    <GigLocationMap location={message.location} />
+                                    <p className={cn("text-xs leading-snug", mine ? "text-white/90" : "text-muted-foreground")}>
+                                      {message.location.address || "Address unavailable"}
+                                    </p>
+                                    <a
+                                      href={`https://www.google.com/maps?q=${message.location.lat},${message.location.lng}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className={cn(
+                                        "flex items-center gap-1 text-xs font-medium underline underline-offset-2",
+                                        mine ? "text-white" : "text-worker"
+                                      )}
+                                    >
+                                      <MapPin className="size-3" />
+                                      Open in Google Maps
+                                    </a>
+                                  </div>
+                                ) : message.attachment?.type === "image" ? (
+                                  <a href={message.attachment.url} target="_blank" rel="noopener noreferrer">
+                                    {/* eslint-disable-next-line @next/next/no-img-element -- external Firebase Storage URL, not a static asset next/image can optimize */}
+                                    <img
+                                      src={message.attachment.url}
+                                      alt={message.attachment.name || "Shared photo"}
+                                      className="max-h-64 w-full rounded-lg object-cover"
+                                    />
+                                  </a>
+                                ) : message.attachment?.type === "video" ? (
+                                  <video src={message.attachment.url} controls className="max-h-64 w-56 rounded-lg" />
+                                ) : message.attachment ? (
+                                  <a
+                                    href={message.attachment.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className={cn(
+                                      "flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs font-medium underline underline-offset-2",
+                                      mine ? "border-white/30 text-white" : "border-hairline text-worker"
+                                    )}
+                                  >
+                                    <FileIcon className="size-4 shrink-0" />
+                                    <span className="truncate">{message.attachment.name || "Download file"}</span>
+                                  </a>
                                 ) : (
                                   <p className="whitespace-pre-line">{message.text}</p>
                                 )}
@@ -781,22 +960,84 @@ export default function ChatPage() {
                   )}
                 </div>
               ) : (
-                <div className="flex items-center gap-2 border-t border-hairline p-3">
-                  <Input
-                    value={messageText}
-                    onChange={(e) => setMessageText(e.target.value)}
-                    placeholder="Send message…"
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        handleSend();
-                      }
-                    }}
-                  />
-                  <Button size="icon" disabled={sending || !messageText.trim()} onClick={handleSend} aria-label="Send">
-                    <Send className="size-4" />
-                  </Button>
-                </div>
+                <>
+                  <div className="flex items-center gap-2 border-t border-hairline p-3">
+                    {role && (
+                      <Popover open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen}>
+                        <PopoverTrigger render={<Button type="button" variant="outline" size="icon" aria-label="Quick messages" />}>
+                          <Zap className="size-4" />
+                        </PopoverTrigger>
+                        <PopoverContent align="start" className="w-72">
+                          <div className="flex flex-wrap gap-1.5 p-1">
+                            {QUICK_REPLIES.map((phrase) => (
+                              <button
+                                key={phrase}
+                                type="button"
+                                disabled={sending}
+                                onClick={() => {
+                                  handleSend(phrase);
+                                  setQuickRepliesOpen(false);
+                                }}
+                                className="shrink-0 rounded-full border border-hairline px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-ink disabled:opacity-50"
+                              >
+                                {phrase}
+                              </button>
+                            ))}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    {role && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="icon"
+                        disabled={sharingLocation}
+                        onClick={handleShareLocation}
+                        aria-label="Share location"
+                      >
+                        {sharingLocation ? <Loader2 className="size-4 animate-spin" /> : <MapPin className="size-4" />}
+                      </Button>
+                    )}
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip"
+                      className="hidden"
+                      onChange={handleAttachmentSelected}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      disabled={uploadingAttachment}
+                      onClick={() => fileInputRef.current?.click()}
+                      aria-label="Attach file"
+                    >
+                      {uploadingAttachment ? <Loader2 className="size-4 animate-spin" /> : <Paperclip className="size-4" />}
+                    </Button>
+                    <Input
+                      value={messageText}
+                      onChange={(e) => setMessageText(e.target.value)}
+                      placeholder="Send message…"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                    />
+                    <Button size="icon" disabled={sending || !messageText.trim()} onClick={() => handleSend()} aria-label="Send">
+                      <Send className="size-4" />
+                    </Button>
+                  </div>
+                </>
+              )}
+
+              {!chatDisabled && (
+                <p className="px-3 pb-2 text-[11px] text-muted-foreground">
+                  You can only delete a message you sent within 2 minutes of sending it — after that, it&apos;s permanent.
+                </p>
               )}
             </>
           )}

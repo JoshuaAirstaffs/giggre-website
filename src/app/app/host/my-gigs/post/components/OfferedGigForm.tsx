@@ -40,7 +40,20 @@ interface OfferedGigFormProps {
 
 export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProps) {
   const { authUser, profile } = useAppSelector((root) => root.user);
-  const { fields, setField, setLocation, locating, captureLocation, reset, validateCommon, checkContent, getScheduledDate, currencyCode } = useCommonGigFields();
+  const {
+    fields,
+    setField,
+    setLocation,
+    locating,
+    captureLocation,
+    reset,
+    validateCommon,
+    checkContent,
+    getScheduledDate,
+    resolvePayFields,
+    resolveWorkDuration,
+    currencyCode,
+  } = useCommonGigFields();
   const [skills, setSkills] = useState<string[]>([]);
   const [skillRequired, setSkillRequired] = useState("");
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
@@ -136,7 +149,8 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
         description: fields.description.trim(),
-        budget: Number(fields.budget),
+        ...resolvePayFields(),
+        workDurationHours: resolveWorkDuration(),
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),
