@@ -15,7 +15,14 @@ export function markFreshLogin() {
   } catch {}
 }
 
-/** Reads and clears the fresh-login marker — call once, on the app shell's first mount after a login. */
+/**
+ * Reads and clears the fresh-login marker. Called exactly once, from
+ * PostLoginModals' mount effect — deliberately NOT cached across calls: a
+ * module-level cache would survive a logout→login cycle in the same tab
+ * (client-side navigation doesn't reload the JS module), silently returning
+ * a stale answer from the previous login instead of re-reading the fresh
+ * marker the next sign-in just set.
+ */
 export function consumeFreshLogin(): boolean {
   try {
     const wasFresh = sessionStorage.getItem(FRESH_LOGIN_KEY) === "1";

@@ -1,6 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import NewMessageToaster from "@/components/NewMessageToaster";
-import VerificationReminderModal from "@/components/VerificationReminderModal";
+import PostLoginModals from "@/components/PostLoginModals";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { verifySession } from "@/lib/dal";
@@ -30,7 +30,7 @@ export default async function WorkerLayout({ children }: { children: React.React
     >
       <AppSidebar user={user} navItems={sidebarItems} sharedItems={sharedItems} role="worker" />
       <NewMessageToaster />
-      <VerificationReminderModal role="worker" />
+      <PostLoginModals role="worker" />
       <SidebarInset>
         <SiteHeader title={`Hello ${user.name}!`} notifications role="worker" />
         <div className="flex min-h-0 flex-1 flex-col">{children}</div>

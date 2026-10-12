@@ -25,6 +25,7 @@ import {
 import { Button } from "./ui/button"
 import { useAppSelector } from "@/store/hooks"
 import { subscribeUnreadRoomsCount } from "@/lib/chat"
+import { subscribeSupportUnreadCount } from "@/lib/support"
 
 
 export function AppSidebar({
@@ -58,9 +59,24 @@ export function AppSidebar({
     return subscribeUnreadRoomsCount(authUser.uid, setUnreadChatCount)
   }, [authUser?.uid])
 
+  const [unreadSupportCount, setUnreadSupportCount] = React.useState(0)
+  React.useEffect(() => {
+    if (!authUser?.uid) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setUnreadSupportCount(0)
+      return
+    }
+    return subscribeSupportUnreadCount(authUser.uid, setUnreadSupportCount)
+  }, [authUser?.uid])
+
   const sharedItemsWithBadges = React.useMemo(
-    () => sharedItems?.map((item) => (item.title === "Chat" ? { ...item, badge: unreadChatCount } : item)),
-    [sharedItems, unreadChatCount]
+    () =>
+      sharedItems?.map((item) => {
+        if (item.title === "Chat") return { ...item, badge: unreadChatCount }
+        if (item.title === "Help & Support") return { ...item, badge: unreadSupportCount }
+        return item
+      }),
+    [sharedItems, unreadChatCount, unreadSupportCount]
   )
 
   return (

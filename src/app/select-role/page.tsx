@@ -1,7 +1,9 @@
+
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { verifySession } from "@/lib/dal";
+import RoleHeading from "./RoleHeading";
 
 export const metadata: Metadata = {
   title: "Continue as — Giggre",
@@ -13,12 +15,7 @@ export default async function SelectRolePage() {
   return (
     <main className="flex min-h-full flex-1 items-center justify-center px-6 py-20">
       <div className="w-full max-w-2xl">
-        <h1 className="text-center font-[var(--font-display)] text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-          How do you want to continue?
-        </h1>
-        <p className="mt-3 text-center text-muted">
-          You can switch anytime — this just sets up your view for now.
-        </p>
+        <RoleHeading />
 
         <div className="mt-10 grid gap-5 sm:grid-cols-2">
           <Link href="/app/worker/browse" className="group block">
