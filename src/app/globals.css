@@ -49,9 +49,9 @@
   --success-tint: #E7F7EF;
   --success-text: #1F7A52;
 
-  --font-display: "Space Grotesk", system-ui, sans-serif;
-  --font-body: "Inter", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  /* --font-display / --font-body / --font-mono are supplied by next/font
+     (see src/app/layout.tsx's `variable` options on <html>), not hardcoded
+     here — avoids loading @fontsource's separate CSS files through Turbopack. */
 
   /* shadcn/ui semantic tokens — aliased to the brand tokens above so they
      automatically follow the existing [data-theme] / prefers-color-scheme
