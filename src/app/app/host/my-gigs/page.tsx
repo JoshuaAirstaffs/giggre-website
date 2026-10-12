@@ -2,7 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Briefcase, ChevronLeft, ChevronRight, Eye, Megaphone, Plus, Search } from "lucide-react";
+import { toast } from "sonner";
+import {
+  Bookmark,
+  Briefcase,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Loader2,
+  Megaphone,
+  Plus,
+  Search,
+} from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +26,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useAppSelector } from "@/store/hooks";
 import { capitalize, formatSchedule, payLabel } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
-import { fetchHostGigs, OPEN_CARD_STATUSES, type HostGig } from "@/lib/host-gigs";
+import {
+  fetchHostGigDetail,
+  fetchHostGigs,
+  OPEN_CARD_STATUSES,
+  type HostGig,
+  type HostGigDetail,
+} from "@/lib/host-gigs";
+import SaveTemplateDialog from "./components/SaveTemplateDialog";
 
 const PAGE_SIZE = 10;
 type FilterKey = "all" | GigTypeKey;
@@ -71,6 +89,8 @@ export default function MyGigsPage() {
   const [search, setSearch] = useState("");
   const [openOnly, setOpenOnly] = useState(false);
   const [page, setPage] = useState(1);
+  const [savingTemplateFor, setSavingTemplateFor] = useState<HostGigDetail | null>(null);
+  const [loadingTemplateSourceId, setLoadingTemplateSourceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uid) return;
@@ -130,6 +150,27 @@ export default function MyGigsPage() {
   function toggleOpenOnly() {
     setOpenOnly((prev) => !prev);
     setPage(1);
+  }
+
+  // This table's own rows are the lightweight HostGig type — missing
+  // description/skill/experience/workDurationHours a template needs to
+  // capture — so fetch the full detail on demand rather than carrying those
+  // extra fields on every row just for this one action.
+  async function handleOpenSaveTemplate(gig: HostGig) {
+    setLoadingTemplateSourceId(gig.id);
+    try {
+      const detail = await fetchHostGigDetail(gig.gigType, gig.id);
+      if (detail) {
+        setSavingTemplateFor(detail);
+      } else {
+        toast.error("Couldn't load this gig's details.");
+      }
+    } catch (err) {
+      console.error("Failed to load gig detail for template:", err);
+      toast.error("Couldn't load this gig's details.");
+    } finally {
+      setLoadingTemplateSourceId(null);
+    }
   }
 
   return (
@@ -241,15 +282,30 @@ export default function MyGigsPage() {
                         </TableCell>
                         <TableCell className="text-muted">{formatSchedule(gig.scheduledDate)}</TableCell>
                         <TableCell>
-                          <Button
-                            size="icon-sm"
-                            variant="ghost"
-                            render={<Link href={`/app/host/my-gigs/${gig.gigType}/${gig.id}`} />}
-                            nativeButton={false}
-                            aria-label="View details"
-                          >
-                            <Eye className="size-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              render={<Link href={`/app/host/my-gigs/${gig.gigType}/${gig.id}`} />}
+                              nativeButton={false}
+                              aria-label="View details"
+                            >
+                              <Eye className="size-4" />
+                            </Button>
+                            <Button
+                              size="icon-sm"
+                              variant="ghost"
+                              aria-label="Save as Template"
+                              disabled={loadingTemplateSourceId === gig.id}
+                              onClick={() => handleOpenSaveTemplate(gig)}
+                            >
+                              {loadingTemplateSourceId === gig.id ? (
+                                <Loader2 className="size-4 animate-spin" />
+                              ) : (
+                                <Bookmark className="size-4" />
+                              )}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
@@ -286,6 +342,13 @@ export default function MyGigsPage() {
           )}
         </div>
       </div>
+
+      <SaveTemplateDialog
+        gig={savingTemplateFor}
+        onOpenChange={(open) => {
+          if (!open) setSavingTemplateFor(null);
+        }}
+      />
     </JoshDiv>
   );
 }

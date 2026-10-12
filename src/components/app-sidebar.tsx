@@ -84,19 +84,19 @@ export function AppSidebar({
         )}
       </SidebarContent>
       <SidebarFooter>
-        {/* {!isVerified && (
+        {!isVerified && role && (
           <Alert className="max-w-md border-yellow-200 bg-yellow-50 text-yellow-900 dark:border-yellow-900 dark:bg-yellow-950 dark:text-yellow-50">
             <AlertTitle>Account not verified</AlertTitle>
             <AlertDescription className="text-xs">
-              Request to admin for veriification
+              Upload your documents to get verified
             </AlertDescription>
             <AlertAction>
-              <Button size="xs" variant="default" className="bg-(--worker-end)">
-                Request
+              <Button size="xs" render={<Link href={`/app/${role}/verification`} />} nativeButton={false}>
+                Verify
               </Button>
             </AlertAction>
           </Alert>
-        )} */}
+        )}
         <NavUser user={user} />
       </SidebarFooter>
     </Sidebar>

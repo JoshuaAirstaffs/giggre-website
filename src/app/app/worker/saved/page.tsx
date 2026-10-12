@@ -55,6 +55,7 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
 // status filter subscribeOfferedGigs applies at the query level.
 function isGigActionable(gig: Gig): boolean {
   if (gig.gigType === "offered") return gig.status === "offered";
+  if (gig.slotsClosed) return false;
   return gig.workerSlots > 1
     ? (gig.status === "open" || gig.status === "partially_filled") && gig.filledSlotCount < gig.workerSlots
     : gig.status === "open";

@@ -62,6 +62,11 @@ export interface Gig {
   // Decorative only — never read by any pay calculation. See the field
   // comment on CommonGigInput in post-gig.ts.
   workDurationHours?: number;
+  // Set by closeRemainingSpots (host-gigs.ts) — the host has enough
+  // workers on a partially-filled open gig and doesn't want new applicants.
+  // Independent of workerSlots/status; see the field comment on
+  // HostGigDetail.slotsClosed for why that matters.
+  slotsClosed: boolean;
 }
 
 export interface HostLookupResult {
@@ -104,6 +109,15 @@ export async function fetchHostByUid(uid: string): Promise<HostLookupResult | nu
     completedGigCount: completedEntries.length,
     memberSince: (data.createdAt as Timestamp | undefined)?.toDate() ?? null,
   };
+}
+
+// Lighter than fetchHostByUid (a single field read, no rating/earnings
+// lookups) — backs the "Verified" badge next to the host's name on the gig
+// details panel, which needs this the moment a gig is selected rather than
+// only once the full host profile drawer is opened.
+export async function fetchHostIsVerified(uid: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, "users", uid));
+  return (snap.data()?.isVerified as string | undefined) === "verified";
 }
 
 // Live-mirrors any user's own `blockedUsers` array — mirrors
@@ -152,6 +166,7 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     workerSlots: (data.workerSlots as number) ?? 1,
     filledSlotCount: (data.filledSlotCount as number) ?? 0,
     workDurationHours: (data.workDurationHours as number | undefined) ?? undefined,
+    slotsClosed: (data.slotsClosed as boolean | undefined) ?? false,
   };
 }
 
@@ -166,8 +181,21 @@ export function subscribeOpenGigs(
   return onSnapshot(
     query(collection(db, "open_gigs"), where("status", "==", "open")),
     (snap) => {
+      // slotsClosed can only ever be set once filledSlotCount > 0 (see
+      // closeRemainingSpots in host-gigs.ts), which always means status has
+      // already moved off "open" — so this filter is currently unreachable
+      // given the query above, but kept as a defensive client-side check
+      // per closeRemainingSpots's own contract: a closed gig must never be
+      // shown as open to a worker, regardless of how it's queried. Combining
+      // an inequality filter with the existing where() would need a
+      // composite index, so this stays client-side.
       const gigs = snap.docs
-        .filter((d) => (d.data().hostId as string | undefined) !== uid && d.data().location != null)
+        .filter(
+          (d) =>
+            (d.data().hostId as string | undefined) !== uid &&
+            d.data().location != null &&
+            !(d.data().slotsClosed as boolean | undefined)
+        )
         .map((d) => toGig(d.id, d.data(), "open"));
       onData(gigs);
     },
@@ -310,10 +338,12 @@ export async function applyToOpenGig(gigId: string, workerId: string, workerName
   const status = (data.status as string) ?? "";
   const workerSlots = (data.workerSlots as number) ?? 1;
   const filledSlotCount = (data.filledSlotCount as number) ?? 0;
+  const slotsClosed = (data.slotsClosed as boolean | undefined) ?? false;
   const stillAcceptingApplicants =
-    workerSlots > 1
+    !slotsClosed &&
+    (workerSlots > 1
       ? (status === "open" || status === "partially_filled") && filledSlotCount < workerSlots
-      : status === "open";
+      : status === "open");
   if (!stillAcceptingApplicants) return { ok: false, reason: "This gig is no longer available." };
 
   const applicants = (data.applicants as ApplicantEntry[] | undefined) ?? [];

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/select";
 import { useAppSelector } from "@/store/hooks";
 import { fetchSkillNames } from "@/lib/browse-gigs";
+import { consumePostAgainPrefill } from "@/lib/post-again";
 import {
   EXPERIENCE_LEVEL_OPTIONS,
   fetchFavoriteWorkers,
@@ -77,6 +78,31 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     fetchSkillNames()
       .then(setSkills)
       .catch((err) => console.error("Failed to load skills:", err));
+  }, []);
+
+  // "Post Again" from a past gig's detail page (see post-again.ts) — seeds
+  // everything except schedule/location and the picked workers (the whole
+  // point is letting the host re-pick who does the job this time). Runs
+  // once on mount; harmless no-op on a dev StrictMode double-invoke since
+  // the prefill is already cleared after the first run. workerSlots isn't
+  // applied here — this form derives its slot count from selectedWorkers,
+  // not a typed field.
+  useEffect(() => {
+    const prefill = consumePostAgainPrefill("offered");
+    if (!prefill) return;
+    setField("title", prefill.title);
+    setField("description", prefill.description);
+    setField("payType", prefill.payType);
+    setField("budget", String(prefill.amount));
+    setField("workDurationHours", prefill.workDurationHours != null ? String(prefill.workDurationHours) : "");
+    // Seeding one-shot prefill state on mount, not reacting to anything —
+    // same justification as useCommonGigFields' own reset-before-resubscribe
+    // effects elsewhere in this codebase.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (prefill.skillRequired) setSkillRequired(prefill.skillRequired);
+    if (prefill.experienceLevel) setExperienceLevel(prefill.experienceLevel);
+    toast.info(`Prefilled from "${prefill.title}" — pick a new date, time, and worker(s).`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Mirrors _WorkerPickerSheet._loadFavorites in post_offered_gig_screen.dart

@@ -7,6 +7,7 @@ import { db } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { useAppSelector } from "@/store/hooks";
 import { postQuickGig } from "@/lib/post-gig";
+import { consumePostAgainPrefill } from "@/lib/post-again";
 import { startAutoSearch } from "@/lib/quick-gig-matching";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
@@ -82,6 +83,23 @@ export default function QuickGigForm() {
   const [lastGigId, setLastGigId] = useState<string | null>(null);
   const unsubscribeSearchRef = useRef<(() => void) | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // "Post Again" from a past gig's detail page (see post-again.ts) — seeds
+  // everything except schedule/location, which stay blank for the host to
+  // set fresh. Runs once on mount; harmless no-op on a dev StrictMode
+  // double-invoke since the prefill is already cleared after the first run.
+  useEffect(() => {
+    const prefill = consumePostAgainPrefill("quick");
+    if (!prefill) return;
+    setField("title", prefill.title);
+    setField("description", prefill.description);
+    setField("payType", prefill.payType);
+    setField("budget", String(prefill.amount));
+    setField("workDurationHours", prefill.workDurationHours != null ? String(prefill.workDurationHours) : "");
+    setField("workerSlots", String(prefill.workerSlots));
+    toast.info(`Prefilled from "${prefill.title}" — pick a new date and time.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function stopWatchingSearch() {
     unsubscribeSearchRef.current?.();

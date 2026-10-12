@@ -14,7 +14,7 @@ export default function Header() {
       className="sticky top-0 z-50 border-b border-hairline bg-mist/80 backdrop-blur-md"
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <Link href="/" className="flex items-center">
+        <Link href="/" className="flex items-center gap-3">
           <Image
             src="/assets/giggre_logo.png"
             alt="Giggre"
@@ -23,6 +23,9 @@ export default function Header() {
             className="h-8 w-auto"
             priority
           />
+          <span className="hidden border-l border-hairline pl-3 font-[var(--font-display)] text-sm font-semibold whitespace-nowrap text-ink md:block">
+            Need Help? Giggre it. Can Help? Giggre it.
+          </span>
         </Link>
         <div className="flex items-center gap-3">
           <ThemeToggle />

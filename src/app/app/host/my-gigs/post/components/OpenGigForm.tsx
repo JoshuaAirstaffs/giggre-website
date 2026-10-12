@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { useAppSelector } from "@/store/hooks";
 import { fetchSkillNames } from "@/lib/browse-gigs";
+import { consumePostAgainPrefill } from "@/lib/post-again";
 import { EXPERIENCE_LEVEL_OPTIONS, postOpenGig, type ExperienceLevel } from "@/lib/post-gig";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
@@ -43,6 +44,29 @@ export default function OpenGigForm() {
     fetchSkillNames()
       .then(setSkills)
       .catch((err) => console.error("Failed to load skills:", err));
+  }, []);
+
+  // "Post Again" from a past gig's detail page (see post-again.ts) — seeds
+  // everything except schedule/location, which stay blank for the host to
+  // set fresh. Runs once on mount; harmless no-op on a dev StrictMode
+  // double-invoke since the prefill is already cleared after the first run.
+  useEffect(() => {
+    const prefill = consumePostAgainPrefill("open");
+    if (!prefill) return;
+    setField("title", prefill.title);
+    setField("description", prefill.description);
+    setField("payType", prefill.payType);
+    setField("budget", String(prefill.amount));
+    setField("workDurationHours", prefill.workDurationHours != null ? String(prefill.workDurationHours) : "");
+    setField("workerSlots", String(prefill.workerSlots));
+    // Seeding one-shot prefill state on mount, not reacting to anything —
+    // same justification as useCommonGigFields' own reset-before-resubscribe
+    // effects elsewhere in this codebase.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (prefill.requiredSkill) setRequiredSkill(prefill.requiredSkill);
+    if (prefill.experienceLevel) setExperienceLevel(prefill.experienceLevel);
+    toast.info(`Prefilled from "${prefill.title}" — pick a new date and time.`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleSubmit() {

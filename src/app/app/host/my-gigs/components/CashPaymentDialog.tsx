@@ -6,6 +6,7 @@ import { Banknote, Check, Pencil, Star, X } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   AlertDialog,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -27,6 +28,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { salary } from "@/lib/gig-format";
 import {
   confirmCashPayment,
+  confirmPaymentManually,
   payableAmountForWorker,
   rateWorker,
   type HostGigDetail,
@@ -73,6 +75,9 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
   const [amountDraft, setAmountDraft] = useState("");
   const [adjustmentReason, setAdjustmentReason] = useState("");
 
+  const [confirmManualOpen, setConfirmManualOpen] = useState(false);
+  const [confirmingManually, setConfirmingManually] = useState(false);
+
   const [selectedStars, setSelectedStars] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [comment, setComment] = useState("");
@@ -91,6 +96,7 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
     setOverrideAmount(null);
     setAmountDraft("");
     setAdjustmentReason("");
+    setConfirmManualOpen(false);
     setSelectedStars(0);
     setSelectedTags([]);
     setComment("");
@@ -176,6 +182,28 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
       setStep("method");
     } finally {
       setConfirming(false);
+    }
+  }
+
+  // The only write path this repo has that can ever mark a worker's slot
+  // completed — the worker's own code-confirmation remains mobile-only.
+  // Mirrors host_payment_code_sheet.dart's "Confirm Manually" exactly, down
+  // to the warning copy. The existing effect above (watching gig.workers
+  // for a status change away from "payment") picks this up the same way it
+  // would the worker's own mobile confirmation — no separate transition
+  // needed here.
+  async function handleConfirmManually() {
+    if (!gig || !worker) return;
+    setConfirmingManually(true);
+    try {
+      const result = await confirmPaymentManually(gig, worker);
+      if (!result.ok) toast.error(result.reason);
+    } catch (err) {
+      console.error("Failed to confirm payment manually:", err);
+      toast.error("Couldn't confirm this payment. Please try again.");
+    } finally {
+      setConfirmingManually(false);
+      setConfirmManualOpen(false);
     }
   }
 
@@ -317,6 +345,9 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
               </p>
             </div>
           )}
+          <Button variant="ghost" size="sm" className="text-muted" onClick={() => setConfirmManualOpen(true)}>
+            Confirm Manually
+          </Button>
           <DialogFooter>
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Done
@@ -324,6 +355,32 @@ export default function CashPaymentDialog({ gig, worker, onOpenChange }: CashPay
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog
+        open={confirmManualOpen}
+        onOpenChange={(open) => {
+          if (!open && !confirmingManually) setConfirmManualOpen(false);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm Manually?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Use this only if the worker verbally confirmed and code verification cannot be completed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={confirmingManually}>Cancel</AlertDialogCancel>
+            <Button
+              disabled={confirmingManually}
+              onClick={handleConfirmManually}
+              className="bg-(--success-start) text-white hover:bg-(--success-end)"
+            >
+              {confirmingManually ? "Confirming…" : "Confirm"}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={open && step === "rating"}

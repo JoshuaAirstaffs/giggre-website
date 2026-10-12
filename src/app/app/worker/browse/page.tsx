@@ -47,6 +47,7 @@ import {
     countryCodeFromCoordinates,
     declineOfferedGig,
     fetchHostByUid,
+    fetchHostIsVerified,
     fetchSkillNames,
     haversineKm,
     subscribeBlockedUserIds,
@@ -151,6 +152,11 @@ const Browse = () => {
     const [viewingHostId, setViewingHostId] = useState<string | null>(null);
     const [hostProfile, setHostProfile] = useState<HostLookupResult | null>(null);
     const [hostProfileLoading, setHostProfileLoading] = useState(false);
+    // Keyed by hostId so repeatedly selecting gigs from the same host (common
+    // when one host posts several) doesn't refetch — separate from
+    // hostProfile above since that's only populated once the full profile
+    // drawer is opened, but the gig details panel needs this immediately.
+    const [hostVerifiedById, setHostVerifiedById] = useState<Map<string, boolean>>(new Map());
     const [blockedHostIds, setBlockedHostIds] = useState<Set<string>>(new Set());
     const [blocking, setBlocking] = useState(false);
 
@@ -272,6 +278,19 @@ const Browse = () => {
     }, [filteredGigs, selectedId]);
 
     const selectedGig = filteredGigs.find((gig) => gig.id === selectedId) ?? null;
+
+    useEffect(() => {
+        const hostId = selectedGig?.hostId;
+        if (!hostId || hostVerifiedById.has(hostId)) return;
+        let cancelled = false;
+        fetchHostIsVerified(hostId)
+            .then((isVerified) => {
+                if (cancelled) return;
+                setHostVerifiedById((prev) => new Map(prev).set(hostId, isVerified));
+            })
+            .catch((err) => console.error("Failed to check host verification status:", err));
+        return () => { cancelled = true; };
+    }, [selectedGig?.hostId, hostVerifiedById]);
 
     function hasApplied(gig: Gig) {
         return !!uid && gig.applicants.some((a) => a.workerId === uid);
@@ -604,9 +623,12 @@ const Browse = () => {
                                             <button
                                                 type="button"
                                                 onClick={() => setViewingHostId(selectedGig.hostId)}
-                                                className="font-medium hover:cursor-pointer text-ink underline-offset-2 hover:underline"
+                                                className="inline-flex items-center gap-1 font-medium hover:cursor-pointer text-ink underline-offset-2 hover:underline"
                                             >
                                                 {selectedGig.hostName}
+                                                {hostVerifiedById.get(selectedGig.hostId) && (
+                                                    <BadgeCheck className="size-3.5 shrink-0 fill-blue-500 text-white" />
+                                                )}
                                             </button>
                                             <span aria-hidden>•</span>
                                             <span>

@@ -170,6 +170,13 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   const [search, setSearch] = useState("");
 
   const [activePeer, setActivePeer] = useState<ChatPeer | null>(null);
+  // Set explicitly when an existing sidebar row is clicked (handleSelectRoom)
+  // so the real room id — which may not follow the dm_{sortedUids} scheme,
+  // e.g. a gig-scoped gig_{gigId} room the participants query also surfaces
+  // — is never discarded in favor of one re-derived from the peer's uid.
+  // null when starting a fresh conversation (handleStartChat, the ?peer=
+  // deep link), which falls back to finding-or-lazily-creating a dm room.
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   // The live window (most recent messages, real-time) and manually paginated
   // history (older messages, fetched once per page when scrolled to the
   // top) are tracked separately and merged for rendering — this way a new
@@ -207,7 +214,16 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   const [deleteTarget, setDeleteTarget] = useState<ChatMessage | null>(null);
   const [deletingMessage, setDeletingMessage] = useState(false);
 
-  const activeRoomId = myUid && activePeer ? directMessageRoomId(myUid, activePeer.uid) : null;
+  // Prefer the exact room the user clicked (selectedRoomId). Otherwise —
+  // starting a conversation fresh — reuse any room that already exists with
+  // this peer (any id scheme), falling back to the lazy dm_{sortedUids} id
+  // only when no room with them exists yet at all.
+  const activeRoomId =
+    selectedRoomId ??
+    (myUid && activePeer
+      ? (rooms.find((r) => otherParticipant(r, myUid) === activePeer.uid)?.id ??
+        directMessageRoomId(myUid, activePeer.uid))
+      : null);
   // Mirrors chat.dart's bidirectional block check — either side blocking
   // disables the composer, but only the blocker sees an "Unblock" action.
   const isBlocked = activePeer ? myBlockedIds.has(activePeer.uid) : false;
@@ -348,7 +364,10 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
     let cancelled = false;
     const cached = peers.get(peerParam);
     (cached ? Promise.resolve(cached) : fetchChatPeer(peerParam)).then((peer) => {
-      if (!cancelled) setActivePeer(peer);
+      if (!cancelled) {
+        setActivePeer(peer);
+        setSelectedRoomId(null);
+      }
     });
     return () => {
       cancelled = true;
@@ -475,6 +494,7 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
     if (!otherUid) return;
     const cached = peers.get(otherUid);
     setActivePeer(cached ?? (await fetchChatPeer(otherUid)));
+    setSelectedRoomId(room.id);
   }
 
   // "Start a conversation" only picks from favorites, not a full user
@@ -511,6 +531,7 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
     const peer: ChatPeer = { uid: found.uid, name: found.name, photoUrl: found.photoUrl };
     setPeers((prev) => new Map(prev).set(peer.uid, peer));
     setActivePeer(peer);
+    setSelectedRoomId(null);
     setNewChatOpen(false);
     setNewChatQuery("");
   }

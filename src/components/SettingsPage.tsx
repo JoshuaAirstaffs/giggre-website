@@ -3,13 +3,31 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { CheckCircle2, LockKeyhole, MinusCircle, ShieldOff, Trash2 } from "lucide-react";
+import {
+  Ban,
+  CheckCircle2,
+  CircleX,
+  Hourglass,
+  LockKeyhole,
+  MinusCircle,
+  Radar,
+  Repeat,
+  SettingsIcon,
+  ShieldOff,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { fetchDeclineSuspensionConfig } from "@/lib/quick-gig-matching";
+import {
+  fetchDeclineSuspensionConfig,
+  fetchMatchingDisplayConfig,
+  type DeclineSuspensionConfig,
+  type MatchingDisplayConfig,
+} from "@/lib/quick-gig-matching";
 import { useAppSelector } from "@/store/hooks";
 
 function formatRemaining(until: Date): string {
@@ -102,6 +120,135 @@ function QuickGigStatusCard() {
   );
 }
 
+function ConfigRow({
+  label,
+  value,
+  icon: Icon,
+  iconClassName,
+}: {
+  label: string;
+  value: string;
+  icon: typeof Ban;
+  iconClassName: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5 py-1.5">
+      <Icon className={cn("size-3.5 shrink-0", iconClassName)} />
+      <p className="flex-1 text-xs text-muted">{label}</p>
+      <p className="text-sm font-semibold text-ink">{value}</p>
+    </div>
+  );
+}
+
+function fmt(value: number | undefined, fallback = "—"): string {
+  return value === undefined ? fallback : String(value);
+}
+
+// Mirrors _ConfigCard("Decline & Suspension") in worker_settings_screen.dart
+// — read-only admin config, purely informational (nothing here is
+// editable; it just explains the rules behind QuickGigStatusCard above).
+function DeclineSuspensionConfigCard({ config }: { config: DeclineSuspensionConfig | null }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Ban className="size-3.5 text-destructive" />
+          Decline &amp; Suspension
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!config ? (
+          <p className="text-xs text-muted">No config available</p>
+        ) : (
+          <>
+            <ConfigRow
+              label="Free Decline Limit"
+              value={fmt(config.freeDeclineLimit)}
+              icon={MinusCircle}
+              iconClassName="text-orange-500"
+            />
+            <ConfigRow
+              label="Suspension Enabled"
+              value={config.suspensionEnabled === true ? "Yes" : "No"}
+              icon={config.suspensionEnabled === true ? CheckCircle2 : CircleX}
+              iconClassName={config.suspensionEnabled === true ? "text-(--success-text)" : "text-muted"}
+            />
+            {config.tiers.length > 0 && (
+              <div className="mt-2 space-y-1.5">
+                <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">Suspension Tiers</p>
+                {config.tiers.map((tier, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2.5 rounded-lg border border-destructive/15 bg-destructive/5 px-3 py-2"
+                  >
+                    <span className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-[10px] font-bold text-destructive">
+                      {i + 1}
+                    </span>
+                    <p className="flex-1 text-xs text-muted">After {fmt(tier.trigger)} declines</p>
+                    <p className="text-xs font-semibold text-destructive">{fmt(tier.durationMinutes)} min suspension</p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Mirrors _ConfigCard("Gig Matching") in worker_settings_screen.dart.
+function GigMatchingConfigCard({ config }: { config: MatchingDisplayConfig | null }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <SettingsIcon className="size-3.5 text-(--worker-text)" />
+          Gig Matching
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {!config ? (
+          <p className="text-xs text-muted">No config available</p>
+        ) : (
+          <>
+            <ConfigRow
+              label="Allow Reassignment"
+              value={config.allowReassignment === true ? "Yes" : "No"}
+              icon={config.allowReassignment === true ? CheckCircle2 : CircleX}
+              iconClassName={config.allowReassignment === true ? "text-(--success-text)" : "text-muted"}
+            />
+            <ConfigRow
+              label="Max Match Attempts"
+              value={fmt(config.maxDispatchAttempts)}
+              icon={Repeat}
+              iconClassName="text-blue-500"
+            />
+            <ConfigRow
+              label="Max Search Radius (km)"
+              value={config.maxSearchRadiusKm != null ? String(config.maxSearchRadiusKm) : "Unlimited"}
+              icon={Radar}
+              iconClassName="text-teal-500"
+            />
+            <ConfigRow
+              label="Response Time (sec)"
+              value={fmt(config.reviewWindowSeconds)}
+              icon={Timer}
+              iconClassName="text-purple-500"
+            />
+            <ConfigRow
+              label="Search Timeout (min)"
+              value={fmt(config.searchTimeoutMinutes)}
+              icon={Hourglass}
+              iconClassName="text-orange-500"
+            />
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // Shared between /app/host/settings and /app/worker/settings — mirrors the
 // "Account" section of worker_settings_screen.dart in the Flutter app
 // (Blocked Users + Delete Account are the only two entries there beyond
@@ -111,13 +258,29 @@ function QuickGigStatusCard() {
 export default function SettingsPage() {
   const pathname = usePathname();
   const basePath = pathname.startsWith("/app/host") ? "/app/host" : "/app/worker";
+  const isWorker = basePath === "/app/worker";
+
+  const [declineSuspensionConfig, setDeclineSuspensionConfig] = useState<DeclineSuspensionConfig | null>(null);
+  const [matchingConfig, setMatchingConfig] = useState<MatchingDisplayConfig | null>(null);
+
+  useEffect(() => {
+    if (!isWorker) return;
+    fetchDeclineSuspensionConfig().then(setDeclineSuspensionConfig).catch(() => {});
+    fetchMatchingDisplayConfig().then(setMatchingConfig).catch(() => {});
+  }, [isWorker]);
 
   return (
     <JoshDiv>
       <TitlePage title="Settings" description="Account settings" />
 
       <div className="mt-6 space-y-4">
-        {basePath === "/app/worker" && <QuickGigStatusCard />}
+        {isWorker && (
+          <>
+            <QuickGigStatusCard />
+            <DeclineSuspensionConfigCard config={declineSuspensionConfig} />
+            <GigMatchingConfigCard config={matchingConfig} />
+          </>
+        )}
 
         <Card>
           <CardHeader>

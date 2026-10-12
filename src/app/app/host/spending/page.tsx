@@ -27,7 +27,7 @@ export default function HostSpendingPage() {
   return (
     <JoshDiv>
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <TitlePage title="My Spending" description="Track what you've paid out, and breakdowns" />
+        <TitlePage title="My Payments" description="Track what you've paid out, and breakdowns" />
         {currencies.length > 1 && (
           <Select value={activeCurrency ?? undefined} onValueChange={setSelectedCurrency}>
             <SelectTrigger size="sm" className="w-24">

@@ -2,6 +2,7 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -15,7 +16,10 @@ import {
   Heart,
   Hourglass,
   MapPin,
+  AlertCircle,
+  Bookmark,
   Navigation,
+  RefreshCw,
   User,
   Users,
   Wallet,
@@ -35,11 +39,19 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { capitalize, formatDuration, formatSchedule, formatWorkDuration, payLabel, salary } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
+  canPostAgain,
+  closeRemainingSpots,
+  isAcceptingApplicants,
+  keepLookingForReplacement,
+  markGigComplete,
+  needsCompletionDecision,
   payableAmountForWorker,
   selectApplicantForOpenGig,
   subscribeHostGigDetail,
@@ -48,9 +60,12 @@ import {
   type HostGigDetail,
   type HostGigWorkerEntry,
 } from "@/lib/host-gigs";
+import { setPostAgainPrefill } from "@/lib/post-again";
+import type { ExperienceLevel } from "@/lib/post-gig";
 import { useFavoriteWorkerIds } from "@/hooks/use-favorite-worker-ids";
 import { useAppSelector } from "@/store/hooks";
 import CashPaymentDialog from "../../components/CashPaymentDialog";
+import SaveTemplateDialog from "../../components/SaveTemplateDialog";
 import ViewPaymentCodeDialog from "../../components/ViewPaymentCodeDialog";
 import GigLocationMap from "../../components/GigLocationMap";
 import WorkerTrackingMap from "../../components/WorkerTrackingMap";
@@ -132,12 +147,22 @@ function StatTile({ icon: Icon, label, value }: { icon: typeof User; label: stri
 
 export default function HostGigDetailPage({ params }: { params: Promise<{ gigType: string; id: string }> }) {
   const { gigType: rawGigType, id } = use(params);
+  const router = useRouter();
   const [gig, setGig] = useState<HostGigDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const [confirmApplicant, setConfirmApplicant] = useState<HostGigApplicantEntry | null>(null);
+  const [confirmCloseSpots, setConfirmCloseSpots] = useState(false);
+  const [closingSpots, setClosingSpots] = useState(false);
+  const [confirmMarkComplete, setConfirmMarkComplete] = useState(false);
+  const [markingComplete, setMarkingComplete] = useState(false);
+  const [keepLookingOpen, setKeepLookingOpen] = useState(false);
+  const [keepLookingDate, setKeepLookingDate] = useState("");
+  const [keepLookingTime, setKeepLookingTime] = useState("");
+  const [settingKeepLooking, setSettingKeepLooking] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<HostGigWorkerEntry | null>(null);
+  const [savingTemplateFor, setSavingTemplateFor] = useState<HostGigDetail | null>(null);
   const [viewCodeTarget, setViewCodeTarget] = useState<HostGigWorkerEntry | null>(null);
   const [favoritingId, setFavoritingId] = useState<string | null>(null);
   // Workers default to expanded — this just tracks who's been collapsed,
@@ -200,6 +225,100 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
       setSelectingId(null);
       setConfirmApplicant(null);
     }
+  }
+
+  // Same live-subscription pattern as confirmSelectApplicant above — no
+  // manual re-fetch needed, the detail subscription picks up slotsClosed
+  // and the cleared applicants array on its own.
+  async function handleCloseRemainingSpots() {
+    if (!gig) return;
+    setClosingSpots(true);
+    try {
+      const result = await closeRemainingSpots(gig);
+      if (result.ok) {
+        toast.success("Remaining spots closed — no longer accepting new applicants.");
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      console.error("Failed to close remaining spots:", err);
+      toast.error("Couldn't close the remaining spots. Please try again.");
+    } finally {
+      setClosingSpots(false);
+      setConfirmCloseSpots(false);
+    }
+  }
+
+  async function handleMarkComplete() {
+    if (!gig) return;
+    setMarkingComplete(true);
+    try {
+      const result = await markGigComplete(gig);
+      if (result.ok) {
+        toast.success("Gig marked complete.");
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      console.error("Failed to mark gig complete:", err);
+      toast.error("Couldn't mark this gig complete. Please try again.");
+    } finally {
+      setMarkingComplete(false);
+      setConfirmMarkComplete(false);
+    }
+  }
+
+  function openKeepLookingDialog() {
+    setKeepLookingDate("");
+    setKeepLookingTime("");
+    setKeepLookingOpen(true);
+  }
+
+  async function handleKeepLooking() {
+    if (!gig || !keepLookingDate) return;
+    const [year, month, day] = keepLookingDate.split("-").map(Number);
+    let hour = 8;
+    let minute = 0;
+    if (keepLookingTime) {
+      [hour, minute] = keepLookingTime.split(":").map(Number);
+    }
+    const scheduledDate = new Date(year, month - 1, day, hour, minute);
+    setSettingKeepLooking(true);
+    try {
+      const result = await keepLookingForReplacement(gig, scheduledDate);
+      if (result.ok) {
+        toast.success("Looking for a replacement — the gig is accepting applicants again.");
+        setKeepLookingOpen(false);
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      console.error("Failed to set keep-looking schedule:", err);
+      toast.error("Couldn't update this gig. Please try again.");
+    } finally {
+      setSettingKeepLooking(false);
+    }
+  }
+
+  // Seeds a one-off prefill (see post-again.ts) and hands off to the
+  // posting form on its matching tab — schedule, location, and (for
+  // offered gigs) the picked workers are deliberately left for the host to
+  // set fresh, same as any new post.
+  function handlePostAgain() {
+    if (!gig) return;
+    setPostAgainPrefill({
+      gigType: gig.gigType,
+      title: gig.title,
+      description: gig.description,
+      payType: gig.payType === "hourly" ? "hourly" : "flat",
+      amount: gig.payType === "hourly" ? (gig.hourlyRate ?? gig.ratePerSlot) : gig.ratePerSlot,
+      workDurationHours: gig.workDurationHours,
+      workerSlots: gig.workerSlots,
+      requiredSkill: gig.requiredSkills?.[0],
+      skillRequired: gig.skillRequired,
+      experienceLevel: gig.experienceLevel as ExperienceLevel | undefined,
+    });
+    router.push(`/app/host/my-gigs/post?tab=${gig.gigType}`);
   }
 
   useEffect(() => {
@@ -297,8 +416,50 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                 {capitalize(gig.gigType)}
               </Badge>
               <Badge variant="secondary">{formatStatus(gig.status)}</Badge>
+              {canPostAgain(gig) && (
+                <Button variant="outline" size="sm" onClick={handlePostAgain}>
+                  <RefreshCw className="size-3.5" />
+                  Post Again
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="icon-sm"
+                aria-label="Save as Template"
+                onClick={() => setSavingTemplateFor(gig)}
+              >
+                <Bookmark className="size-3.5" />
+              </Button>
             </div>
           </div>
+
+          {needsCompletionDecision(gig) && (
+            <Card className="mt-4 border-(--host-tint) bg-(--host-tint)/30 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 size-4 shrink-0 text-(--host-text)" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-ink">This gig didn&apos;t fill all its slots</p>
+                  <p className="mt-0.5 text-sm text-muted">
+                    Mark it complete, or keep looking for another worker for the remaining{" "}
+                    {gig.workerSlots - gig.filledSlotCount} spot
+                    {gig.workerSlots - gig.filledSlotCount === 1 ? "" : "s"}?
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button variant="outline" size="sm" onClick={openKeepLookingDialog}>
+                      Keep Looking
+                    </Button>
+                    <Button
+                      size="sm"
+                      onClick={() => setConfirmMarkComplete(true)}
+                      className="bg-(--success-start) text-white hover:bg-(--success-end)"
+                    >
+                      Mark Complete
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
 
           <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
             <StatTile icon={Users} label="Workers" value={`${gig.filledSlotCount} / ${gig.workerSlots}`} />
@@ -317,11 +478,18 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
           <div className="mt-6 grid gap-4 lg:grid-cols-5">
             <div className="space-y-4 lg:col-span-3">
               <Card className="p-5">
-                <CardHeader className="p-0">
-                  <CardTitle className="text-sm">Workers</CardTitle>
-                  <CardDescription>
-                    Skills, progress, and payment status for each assigned worker
-                  </CardDescription>
+                <CardHeader className="flex flex-row items-start justify-between gap-2 p-0">
+                  <div>
+                    <CardTitle className="text-sm">Workers</CardTitle>
+                    <CardDescription>
+                      Skills, progress, and payment status for each assigned worker
+                    </CardDescription>
+                  </div>
+                  {gig.gigType === "open" && gig.filledSlotCount > 0 && isAcceptingApplicants(gig) && (
+                    <Button variant="outline" size="sm" onClick={() => setConfirmCloseSpots(true)}>
+                      Close remaining spots
+                    </Button>
+                  )}
                 </CardHeader>
                 <CardContent className="mt-3 space-y-2 p-0">
                   {navigatingWorkers.length > 0 && gig.location && (
@@ -808,11 +976,130 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
             </AlertDialogContent>
           </AlertDialog>
 
+          <AlertDialog
+            open={confirmCloseSpots}
+            onOpenChange={(open) => {
+              if (!open && !closingSpots) setConfirmCloseSpots(false);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Close remaining spots?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {gig && (
+                    <>
+                      You&apos;ll continue with the {gig.filledSlotCount} worker
+                      {gig.filledSlotCount === 1 ? "" : "s"} already on this gig. The other{" "}
+                      {gig.workerSlots - gig.filledSlotCount} open spot
+                      {gig.workerSlots - gig.filledSlotCount === 1 ? "" : "s"} will stop accepting applicants.
+                    </>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={closingSpots}>Cancel</AlertDialogCancel>
+                <Button
+                  disabled={closingSpots}
+                  onClick={handleCloseRemainingSpots}
+                  className="bg-(--success-start) text-white hover:bg-(--success-end)"
+                >
+                  {closingSpots ? "Closing…" : "Close remaining spots"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={confirmMarkComplete}
+            onOpenChange={(open) => {
+              if (!open && !markingComplete) setConfirmMarkComplete(false);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Mark this gig complete?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  {gig && (
+                    <>
+                      The remaining {gig.workerSlots - gig.filledSlotCount} spot
+                      {gig.workerSlots - gig.filledSlotCount === 1 ? "" : "s"} will stop accepting applicants for
+                      good. This can&apos;t be undone.
+                    </>
+                  )}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={markingComplete}>Cancel</AlertDialogCancel>
+                <Button
+                  disabled={markingComplete}
+                  onClick={handleMarkComplete}
+                  className="bg-(--success-start) text-white hover:bg-(--success-end)"
+                >
+                  {markingComplete ? "Marking…" : "Mark Complete"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
+            open={keepLookingOpen}
+            onOpenChange={(open) => {
+              if (!open && !settingKeepLooking) setKeepLookingOpen(false);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Keep looking for a replacement</AlertDialogTitle>
+                <AlertDialogDescription>
+                  The original schedule may already be in the past — pick a new date and time before this gig starts
+                  accepting applicants again.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <div className="flex gap-3">
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="keep-looking-date">Date</Label>
+                  <Input
+                    id="keep-looking-date"
+                    type="date"
+                    value={keepLookingDate}
+                    onChange={(e) => setKeepLookingDate(e.target.value)}
+                  />
+                </div>
+                <div className="flex-1 space-y-1.5">
+                  <Label htmlFor="keep-looking-time">Time</Label>
+                  <Input
+                    id="keep-looking-time"
+                    type="time"
+                    value={keepLookingTime}
+                    onChange={(e) => setKeepLookingTime(e.target.value)}
+                  />
+                </div>
+              </div>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={settingKeepLooking}>Cancel</AlertDialogCancel>
+                <Button
+                  disabled={settingKeepLooking || !keepLookingDate}
+                  onClick={handleKeepLooking}
+                  className="bg-(--success-start) text-white hover:bg-(--success-end)"
+                >
+                  {settingKeepLooking ? "Saving…" : "Keep Looking"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <CashPaymentDialog
             gig={gig}
             worker={paymentTarget}
             onOpenChange={(open) => {
               if (!open) setPaymentTarget(null);
+            }}
+          />
+
+          <SaveTemplateDialog
+            gig={savingTemplateFor}
+            onOpenChange={(open) => {
+              if (!open) setSavingTemplateFor(null);
             }}
           />
 

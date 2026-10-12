@@ -4,6 +4,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -277,6 +278,24 @@ export interface HostGigDetail extends HostGig {
   // Decorative only — never read by any pay calculation. See the field
   // comment on CommonGigInput in post-gig.ts.
   workDurationHours?: number;
+  // Set by closeRemainingSpots/markGigComplete below — the host has enough
+  // workers and wants to stop taking new applicants without cancelling the
+  // gig or touching already-selected workers. Deliberately independent of
+  // workerSlots/status: an earlier version of this signaled "closed" by
+  // shrinking workerSlots down to filledSlotCount, which broke every
+  // `workerSlots > 1` multi-worker check (a closed 2-slot gig with 1 filled
+  // got misclassified as single-worker and hid the selected worker's
+  // tracking view). See isAcceptingApplicants for the real "still accepting
+  // applicants" formula — never infer multi-worker-ness from slotsClosed.
+  slotsClosed: boolean;
+  // Set by keepLookingForReplacement below (the "Keep Looking" side of the
+  // completion-decision banner) — every currently-filled slot finished, but
+  // the host chose to look for a replacement instead of marking the gig
+  // done. Cleared once selectApplicantForOpenGig actually assigns someone.
+  // Purely a host-side UI/decision-state concept, not read by the
+  // worker-facing browse/apply eligibility checks (verified against the
+  // Flutter app's own worker-facing feed query, which never references it).
+  awaitingReplacement: boolean;
   // quick_gigs only
   category?: string;
   duration?: string;
@@ -536,6 +555,8 @@ async function buildHostGigDetail(
     ratePerSlot: (data.ratePerSlot as number | undefined) ?? (data.budget as number | undefined) ?? 0,
     slotsCompleted,
     workDurationHours: data.workDurationHours as number | undefined,
+    slotsClosed: (data.slotsClosed as boolean | undefined) ?? false,
+    awaitingReplacement: (data.awaitingReplacement as boolean | undefined) ?? false,
     category: data.category as string | undefined,
     duration: data.duration as string | undefined,
     requiredSkills: data.requiredSkills as string[] | undefined,
@@ -706,12 +727,127 @@ export async function selectApplicantForOpenGig(
         filledSlotCount: newFilled,
         status: newFilled >= workerSlots ? "filled" : "partially_filled",
         applicants: arrayRemove(applicantEntry),
+        // The only place this gets cleared — a replacement is actually on
+        // the gig now, so the "Keep Looking" state is resolved. Harmless
+        // no-op via deleteField() if it was never set.
+        awaitingReplacement: deleteField(),
       });
     });
     return { ok: true };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "Couldn't select this worker." };
   }
+}
+
+// The one correct way to answer "can this gig still take applicants" —
+// never derive it from workerSlots/status alone (see the field comment on
+// HostGigDetail.slotsClosed for why). Mirrors the Flutter app's own
+// `acceptingMoreSlots` computation in gig_detail_sheet.dart exactly: once
+// every currently-filled slot is done, applicant-selection pauses (even if
+// there's an unfilled slot left) until the host explicitly resolves the
+// completion-decision banner (see needsCompletionDecision below) — unless
+// they already chose "Keep Looking" (awaitingReplacement).
+export function isAcceptingApplicants(gig: HostGigDetail): boolean {
+  if (gig.slotsClosed) return false;
+  if (gig.status === "cancelled" || gig.status === "cancellation_requested" || gig.status === "completed") {
+    return false;
+  }
+  const allFilledSlotsDone = gig.filledSlotCount > 0 && gig.slotsCompleted >= gig.filledSlotCount;
+  if (allFilledSlotsDone && !gig.awaitingReplacement) return false;
+  return gig.workerSlots > 1 ? gig.filledSlotCount < gig.workerSlots : gig.status === "open";
+}
+
+// Lets a host stop taking new applicants on a partially-filled open gig
+// without cancelling it (which routes through admin review and would also
+// affect already-selected workers) and without touching those workers —
+// their own `workers/{workerId}` subcollection docs progress through their
+// lifecycle completely independently of this. Only ever clears the pending
+// `applicants` array; workerSlots/status are deliberately left untouched.
+export async function closeRemainingSpots(gig: HostGigDetail): Promise<ActionResult> {
+  if (gig.gigType !== "open") {
+    return { ok: false, reason: "Only open gigs support closing remaining spots." };
+  }
+  try {
+    await updateDoc(doc(db, "open_gigs", gig.id), { slotsClosed: true, applicants: [] });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't close the remaining spots." };
+  }
+}
+
+// The ambiguous case isAcceptingApplicants pauses on: a multi-worker open
+// gig with an unfilled slot, not yet closed, where every currently-filled
+// slot has already finished — the host has to say whether that's "done" or
+// "still need one more." Mirrors gig_detail_sheet.dart's own banner-trigger
+// condition exactly.
+export function needsCompletionDecision(gig: HostGigDetail): boolean {
+  if (gig.gigType !== "open" || gig.workerSlots <= 1) return false;
+  if (gig.filledSlotCount >= gig.workerSlots) return false;
+  if (gig.slotsClosed || gig.status === "completed" || gig.awaitingReplacement) return false;
+  return gig.filledSlotCount > 0 && gig.slotsCompleted >= gig.filledSlotCount;
+}
+
+// "Mark Complete" — deliberately permanent, same as closeRemainingSpots (no
+// "Reopen" exists for either): the only way to bring on a worker for this
+// job afterward is reposting.
+export async function markGigComplete(gig: HostGigDetail): Promise<ActionResult> {
+  if (gig.gigType !== "open") {
+    return { ok: false, reason: "Only open gigs support this." };
+  }
+  try {
+    await updateDoc(doc(db, "open_gigs", gig.id), { slotsClosed: true, status: "completed", applicants: [] });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't mark this gig complete." };
+  }
+}
+
+// "Keep Looking" — the original schedule may already be in the past by the
+// time a worker finishes a job, so a new one is required up front, not
+// optional. `awaitingReplacement` is what actually lets
+// isAcceptingApplicants resume (just updating the schedule wouldn't, since
+// "every filled slot is done" stays true until a replacement is picked) —
+// selectApplicantForOpenGig clears it once that happens.
+export async function keepLookingForReplacement(gig: HostGigDetail, scheduledDate: Date): Promise<ActionResult> {
+  if (gig.gigType !== "open") {
+    return { ok: false, reason: "Only open gigs support this." };
+  }
+  try {
+    await updateDoc(doc(db, "open_gigs", gig.id), {
+      scheduledDate: Timestamp.fromDate(scheduledDate),
+      awaitingReplacement: true,
+    });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't update this gig." };
+  }
+}
+
+// Gigs eligible for "Post Again" — done and can't go anywhere else on
+// their own.
+const POST_AGAIN_GIG_STATUSES = new Set(["completed", "no_worker", "cancelled"]);
+// Worker-slot statuses that mean that slot is done, one way or another —
+// distinct from UNFILLED_WORKER_STATUSES above, which is about whether a
+// slot counts as occupied at all, not whether it's finished.
+const TERMINAL_WORKER_SLOT_STATUSES = new Set(["completed", "declined", "cancelled"]);
+
+// For a multi-worker gig, the gig doc's own `status` never actually reaches
+// 'completed' — each worker slot completes and gets paid independently
+// (only that slot's own subcollection doc is updated, see
+// worker_payment_confirm_sheet.dart), so gating purely on `status` would
+// never surface "Post Again" for a multi-worker gig no matter how finished
+// it actually is. The second branch below covers that: a host who closed
+// remaining spots (slotsClosed, see closeRemainingSpots above) once every
+// filled slot reached a terminal state has nothing left to happen on this
+// gig either, even though `status` itself never says so. Checked against
+// `gig.workers` — the same live worker-list the page already renders each
+// worker's card from, not a separate listener.
+export function canPostAgain(gig: HostGigDetail): boolean {
+  if (POST_AGAIN_GIG_STATUSES.has(gig.status)) return true;
+  if (gig.workerSlots > 1 && gig.slotsClosed && gig.workers.length > 0) {
+    return gig.workers.every((w) => TERMINAL_WORKER_SLOT_STATUSES.has(w.status));
+  }
+  return false;
 }
 
 export type CashPaymentResult = { ok: true; paymentCode: string } | { ok: false; reason: string };
@@ -785,6 +921,60 @@ export async function confirmCashPayment(
       updateDoc(doc(db, "users", worker.workerId), { slot: "AVAILABLE" }),
     ]);
     return { ok: true, paymentCode };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't confirm this payment." };
+  }
+}
+
+// Mirrors host_payment_code_sheet.dart's "Confirm Manually" override
+// exactly — for when the worker verbally confirmed but can't complete the
+// code-entry step on their own device (which this repo doesn't have a web
+// equivalent of either way). This is the ONLY write path this repo has that
+// can ever mark a worker's slot completed — the worker's own confirmation
+// remains mobile-only. Also increments the raw `slotsCompleted` counter on
+// the gig doc and conditionally auto-completes it, matching mobile's own
+// worker_payment_confirm_sheet.dart/host_payment_code_sheet.dart logic
+// exactly, so a gig manually-confirmed here stays consistent if later
+// viewed on mobile (which reads that raw counter directly for its own UI —
+// this repo's own display instead live-derives it from `workers`, which is
+// unaffected either way).
+export async function confirmPaymentManually(
+  gig: HostGigDetail,
+  worker: HostGigWorkerEntry
+): Promise<ActionResult> {
+  const collectionName = HOST_GIG_COLLECTIONS[gig.gigType];
+  const targetRef =
+    gig.workerSlots > 1
+      ? doc(db, collectionName, gig.id, "workers", worker.workerId)
+      : doc(db, collectionName, gig.id);
+  const gigRef = doc(db, collectionName, gig.id);
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const gigSnap = await tx.get(gigRef);
+      const data = gigSnap.data();
+
+      tx.update(targetRef, {
+        status: "completed",
+        completedAt: serverTimestamp(),
+        paymentConfirmedAt: serverTimestamp(),
+        paymentConfirmedManually: true,
+      });
+
+      if (data) {
+        const workerSlots = (data.workerSlots as number | undefined) ?? 1;
+        const filledSlotCount = (data.filledSlotCount as number | undefined) ?? 0;
+        const slotsClosed = (data.slotsClosed as boolean | undefined) ?? false;
+        const completed = ((data.slotsCompleted as number | undefined) ?? 0) + 1;
+        const allFilledDone = completed >= filledSlotCount;
+        const noOpenSlotLeft = filledSlotCount >= workerSlots || slotsClosed;
+        tx.update(gigRef, {
+          slotsCompleted: completed,
+          ...(allFilledDone && noOpenSlotLeft ? { status: "completed" } : {}),
+        });
+      }
+    });
+    return { ok: true };
   } catch (err) {
     return { ok: false, reason: err instanceof Error ? err.message : "Couldn't confirm this payment." };
   }

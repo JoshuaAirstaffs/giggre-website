@@ -50,14 +50,36 @@ export const COUNTRIES = [
   { name: "Bangladesh", flag: "🇧🇩", dialCode: "+880" },
 ] as const;
 
-export const DEFAULT_COUNTRY = COUNTRIES[0];
+export const DEFAULT_COUNTRY = COUNTRIES.find((c) => c.name === "United States")!;
 
-// Matches Philippine (+63 / 09xx) and U.S. (+1 / 10-digit) numbers.
-const PHONE_REGEX = /^(\+?63|0)9\d{9}$|^(\+?1)?[2-9]\d{2}[2-9]\d{6}$/;
-const GENERIC_PHONE_REGEX = /^\+\d{6,15}$/;
-
-export function isPhoneValid(fullPhone: string) {
-  return PHONE_REGEX.test(fullPhone) || GENERIC_PHONE_REGEX.test(fullPhone);
+/**
+ * Builds the E.164 number for `national` under the selected `dialCode`, or
+ * returns null when the digits don't fit that country's format — e.g. a
+ * Philippine "0917…" number entered while +1 (US/Canada) is selected.
+ * Ported from giggre_app/lib/features/auth/presentation/phone_autofill.dart's
+ * `buildFullPhone` to keep validation identical across platforms.
+ */
+export function buildFullPhone(dialCode: string, national: string): string | null {
+  let digits = national.trim().replace(/[\s()\-.]/g, "");
+  if (!/^\d+$/.test(digits)) return null;
+  switch (dialCode) {
+    case "+1":
+      // Tolerate the national "1" prefix (1 555 123 4567).
+      if (digits.length === 11 && digits.startsWith("1")) digits = digits.slice(1);
+      if (!/^[2-9]\d{2}[2-9]\d{6}$/.test(digits)) return null;
+      break;
+    case "+63":
+      // Mobile only: 09XX XXX XXXX locally, 9XX XXX XXXX after +63.
+      if (digits.startsWith("0")) digits = digits.slice(1);
+      if (!/^9\d{9}$/.test(digits)) return null;
+      break;
+    default: {
+      if (digits.startsWith("0")) digits = digits.slice(1);
+      const codeLength = dialCode.length - 1;
+      if (digits.length < 6 || digits.length + codeLength > 15) return null;
+    }
+  }
+  return `${dialCode}${digits}`;
 }
 
 export interface PasswordRequirement {
@@ -193,10 +215,14 @@ export async function createUserProfile(profile: NewUserProfile) {
     userId: profile.userId,
     email: profile.email,
     name: profile.name,
+    legalAgeConfirmed: true,
+    legalAgeConfirmedAt: Timestamp.now(),
     phone: profile.phone,
     photoUrl: profile.photoUrl ?? "",
     balance: 0,
     createdAt: Timestamp.now(),
+    termsAccepted: true,
+    termsAcceptedAt: Timestamp.now(),
     skills: [],
     openGigsUnlocked: false,
     signInMethod: profile.signInMethod,

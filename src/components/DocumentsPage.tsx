@@ -21,6 +21,15 @@ import {
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -109,6 +118,7 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeCategory, setActiveCategory] = useState<DocCategory | null>(null);
+  const [showConsent, setShowConsent] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -273,7 +283,15 @@ export default function DocumentsPage() {
         </div>
       )}
 
-      <Sheet open={activeCategory !== null} onOpenChange={(open) => !open && setActiveCategory(null)}>
+      <Sheet
+        open={activeCategory !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setActiveCategory(null);
+            setShowConsent(false);
+          }
+        }}
+      >
         <SheetContent>
           {activeCategory && (
             <>
@@ -330,7 +348,7 @@ export default function DocumentsPage() {
                   variant="outline"
                   className="mt-auto w-full gap-1.5"
                   disabled={atCapacity || uploading}
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => setShowConsent(true)}
                 >
                   <Upload className="size-3.5" />
                   {uploading ? "Uploading…" : atCapacity ? "Limit reached" : "Add Document"}
@@ -340,6 +358,35 @@ export default function DocumentsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Mirrors MyDocumentsScreen's _confirmShareConsent — asked before every
+          upload, not just the first, with no persisted "already agreed" flag. */}
+      <AlertDialog open={showConsent} onOpenChange={setShowConsent}>
+        <AlertDialogContent>
+          <AlertDialogHeader className="items-center text-center">
+            <div className="flex size-14 items-center justify-center rounded-full bg-(--worker-tint) text-(--worker-text)">
+              <ShieldCheck className="size-7" />
+            </div>
+            <AlertDialogTitle>Share Your Document?</AlertDialogTitle>
+            <AlertDialogDescription>
+              By continuing, you agree to share this ID or document with Giggre. It will be stored securely and
+              reviewed by our team only to verify your account.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="sm:flex-col">
+            <Button
+              className="w-full"
+              onClick={() => {
+                setShowConsent(false);
+                fileInputRef.current?.click();
+              }}
+            >
+              I Agree
+            </Button>
+            <AlertDialogCancel className="w-full border-none shadow-none">I Changed My Mind</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </JoshDiv>
   );
 }

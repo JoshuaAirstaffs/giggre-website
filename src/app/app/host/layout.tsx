@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import NewMessageToaster from "@/components/NewMessageToaster";
+import VerificationReminderModal from "@/components/VerificationReminderModal";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { verifySession } from "@/lib/dal";
@@ -30,6 +31,7 @@ export default async function HostLayout({ children }: { children: React.ReactNo
     >
       <AppSidebar user={user} navItems={sidebarItems} sharedItems={sharedItems} role="host" />
       <NewMessageToaster />
+      <VerificationReminderModal role="host" />
       <SidebarInset>
         <SiteHeader
           title={`Hello ${user.name}!`}

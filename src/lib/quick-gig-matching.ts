@@ -67,16 +67,75 @@ async function fetchConfig(): Promise<MatchingConfig> {
   }
 }
 
-// Backs the worker Settings page's "Quick Gig Status" card — mirrors
-// worker_settings_screen.dart's `_fetchAdminConfig`, reading the same
-// quick_gig_config/decline_suspension doc for the free-decline threshold.
-export async function fetchDeclineSuspensionConfig(): Promise<{ freeDeclineLimit: number }> {
+export interface SuspensionTier {
+  trigger: number | undefined;
+  durationMinutes: number | undefined;
+}
+
+export interface DeclineSuspensionConfig {
+  freeDeclineLimit: number;
+  // Undefined (not defaulted) when the field/doc is missing — mirrors
+  // worker_settings_screen.dart's "—"/"No config available" fallback
+  // exactly, unlike freeDeclineLimit above (which the existing
+  // QuickGigStatusCard caller already treats 0 as "no limit configured").
+  suspensionEnabled: boolean | undefined;
+  tiers: SuspensionTier[];
+}
+
+// Backs the worker Settings page's "Quick Gig Status" card and the "Decline
+// & Suspension" config card — mirrors worker_settings_screen.dart's
+// `_fetchAdminConfig`, reading the same quick_gig_config/decline_suspension
+// doc verbatim (including `suspension_tier_table`'s per-entry field names).
+export async function fetchDeclineSuspensionConfig(): Promise<DeclineSuspensionConfig> {
   try {
     const snap = await getDoc(doc(db, "quick_gig_config", "decline_suspension"));
-    const data = snap.data() ?? {};
-    return { freeDeclineLimit: (data.free_decline_limit as number | undefined) ?? 0 };
+    const data = snap.data();
+    const tierTable = (data?.suspension_tier_table as Record<string, unknown>[] | undefined) ?? [];
+    return {
+      freeDeclineLimit: (data?.free_decline_limit as number | undefined) ?? 0,
+      suspensionEnabled: data?.suspension_enabled as boolean | undefined,
+      tiers: tierTable.map((tier) => ({
+        trigger: tier.decline_count_trigger as number | undefined,
+        durationMinutes: tier.suspension_duration_minutes as number | undefined,
+      })),
+    };
   } catch {
-    return { freeDeclineLimit: 0 };
+    return { freeDeclineLimit: 0, suspensionEnabled: undefined, tiers: [] };
+  }
+}
+
+export interface MatchingDisplayConfig {
+  allowReassignment: boolean | undefined;
+  maxDispatchAttempts: number | undefined;
+  maxSearchRadiusKm: number | undefined;
+  reviewWindowSeconds: number | undefined;
+  searchTimeoutMinutes: number | undefined;
+}
+
+// Backs the worker Settings page's "Gig Matching" config card — a separate,
+// raw (undefined-if-missing) read of the same quick_gig_config/matching_engine
+// doc fetchConfig() above also reads, but that function silently falls back
+// to hardcoded defaults for the dispatch engine's own use, which would
+// misrepresent an actually-missing admin config value if reused for display.
+export async function fetchMatchingDisplayConfig(): Promise<MatchingDisplayConfig> {
+  try {
+    const snap = await getDoc(doc(db, "quick_gig_config", "matching_engine"));
+    const data = snap.data();
+    return {
+      allowReassignment: data?.allow_reassignment_after_exhaustion as boolean | undefined,
+      maxDispatchAttempts: data?.max_dispatch_attempts as number | undefined,
+      maxSearchRadiusKm: data?.max_search_radius_km as number | undefined,
+      reviewWindowSeconds: data?.review_window_seconds as number | undefined,
+      searchTimeoutMinutes: data?.search_timeout_minutes as number | undefined,
+    };
+  } catch {
+    return {
+      allowReassignment: undefined,
+      maxDispatchAttempts: undefined,
+      maxSearchRadiusKm: undefined,
+      reviewWindowSeconds: undefined,
+      searchTimeoutMinutes: undefined,
+    };
   }
 }
 

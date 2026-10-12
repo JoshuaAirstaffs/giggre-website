@@ -1,4 +1,4 @@
-import { Briefcase, Heart, LayoutDashboard, Wallet } from "lucide-react";
+import { Bookmark, Briefcase, Heart, LayoutDashboard, Wallet } from "lucide-react";
 import type { NavItem } from "@/components/nav-main";
 import { sharedNavItems } from "@/components/shared-nav-items";
 
@@ -17,9 +17,14 @@ export const sidebarItems: NavItem[] = [
     icon: <Briefcase />,
   },
   {
-    title: "My Spending",
+    title: "My Payments",
     url: "/app/host/spending",
     icon: <Wallet />,
+  },
+  {
+    title: "Saved Templates",
+    url: "/app/host/my-gigs/templates",
+    icon: <Bookmark />,
   },
   {
     title: "Favorites",

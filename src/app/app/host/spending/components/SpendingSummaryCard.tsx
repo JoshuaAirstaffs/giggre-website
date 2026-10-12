@@ -81,7 +81,7 @@ export default function SpendingSummaryCard({ entries, loading, currency }: Spen
   return (
     <Card className="py-6 px-8">
       <CardHeader className="p-0">
-        <CardTitle className="text-sm font-medium text-muted">Spending</CardTitle>
+        <CardTitle className="text-sm font-medium text-muted">Payments</CardTitle>
       </CardHeader>
       <CardContent className="mt-2 grid grid-cols-1 gap-4 p-0 sm:grid-cols-3">
         <div>
