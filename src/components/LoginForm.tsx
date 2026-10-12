@@ -60,6 +60,7 @@ export default function LoginForm() {
       router.push("/select-role");
       router.refresh();
     } catch (err) {
+      console.error("Sign-in failed:", err);
       const message = authErrorMessage(err);
       if (message) {
         setError(message);

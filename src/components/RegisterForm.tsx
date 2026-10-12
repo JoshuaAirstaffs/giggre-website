@@ -244,6 +244,7 @@ export default function RegisterForm() {
       setPendingOAuthProvider(providerName);
       setPendingOAuthUser(credential.user);
     } catch (err) {
+      console.error("OAuth sign-in failed:", err);
       const message = authErrorMessage(err);
       if (message) {
         setError(message);
@@ -323,6 +324,7 @@ export default function RegisterForm() {
 
       await finishAndRedirect(credential.user, "Welcome to Giggre! Your account is ready.");
     } catch (err) {
+      console.error("Registration failed:", err);
       const message = authErrorMessage(err);
       if (message) {
         setError(message);

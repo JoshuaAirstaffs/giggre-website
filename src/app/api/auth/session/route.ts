@@ -17,7 +17,8 @@ export async function POST(request: Request) {
     });
     await setSessionCookie(sessionCookie);
     return Response.json({ uid: decoded.uid });
-  } catch {
+  } catch (err) {
+    console.error("Failed to establish session:", err);
     return Response.json({ error: "Could not verify sign-in." }, { status: 401 });
   }
 }
