@@ -6,7 +6,7 @@
     "dev": "npm run dev:dev",
     "dev:prod": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next dev",
     "dev:dev": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=dev next dev",
-    "build": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next build",
+    "build": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next build --webpack",
     "start": "cross-env NEXT_PUBLIC_FIREBASE_DB_ENV=prod next start",
     "lint": "eslint"
   },
