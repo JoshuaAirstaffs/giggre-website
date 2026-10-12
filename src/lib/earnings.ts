@@ -45,6 +45,26 @@ export interface CompletedEntry {
   gigType: string;
   gigTypeKey: GigTypeKey | null;
   workerSlots: number;
+  // Only meaningfully populated by fetchHostCompletedEntries (which spans
+  // every worker a host has paid) — fetchCompletedEntries is already
+  // filtered to a single worker by its `uid` param, so callers there don't
+  // need this.
+  workerId?: string;
+  // Same as workerId above — only meaningful for fetchHostCompletedEntries,
+  // where the host's spending history needs to show *who* was paid (the
+  // worker-side fetchCompletedEntries already knows the caller is the
+  // worker, so it surfaces hostName instead).
+  workerName?: string;
+  // The parent gig doc's id — for a multi-slot gig, every worker's
+  // completion is its own entry (see the comments below) but they all
+  // share this, so a caller (RecentPaymentsCard) can group them back into
+  // one gig-level row with a per-worker breakdown.
+  gigId: string;
+  // Written by the worker's mobile device at task_complete (see the same
+  // field on HostGigWorkerEntry in host-gigs.ts) — this worker's own real
+  // tracked time on this gig, decorative-only like everywhere else it's
+  // read, just surfaced here for the spend/earnings history views.
+  durationSeconds?: number;
 }
 
 export async function fetchCompletedEntries(uid: string): Promise<CompletedEntry[]> {
@@ -58,7 +78,11 @@ export async function fetchCompletedEntries(uid: string): Promise<CompletedEntry
         const completedAt: Timestamp | undefined = data.completedAt ?? data.createdAt;
         return {
           completedAt: completedAt?.toDate() ?? new Date(),
-          amount: (data.budget as number | undefined) ?? 0,
+          // finalAmount (written by confirmCashPayment) is the real
+          // hourly-computed payout when present — falls back to the flat
+          // estimate for gigs completed entirely through mobile, which
+          // never writes it back (see the Known gaps note in host-gigs.ts).
+          amount: (data.finalAmount as number | undefined) ?? (data.budget as number | undefined) ?? 0,
           currencyCode: (data.currencyCode as string | undefined) ?? "USD",
           title: (data.title as string | undefined) || GIG_TYPE_LABELS[name],
           hostName: (data.hostName as string | undefined) ?? "",
@@ -66,6 +90,8 @@ export async function fetchCompletedEntries(uid: string): Promise<CompletedEntry
           gigType: GIG_TYPE_LABELS[name],
           gigTypeKey: GIG_TYPE_KEYS[name],
           workerSlots: (data.workerSlots as number | undefined) ?? 1,
+          gigId: d.id,
+          durationSeconds: (data.durationSeconds as number | undefined) ?? undefined,
         };
       });
     })
@@ -92,7 +118,7 @@ export async function fetchCompletedEntries(uid: string): Promise<CompletedEntry
 
       return {
         completedAt: completedAt?.toDate() ?? new Date(),
-        amount: (data.rate as number | undefined) ?? 0,
+        amount: (data.finalAmount as number | undefined) ?? (data.rate as number | undefined) ?? 0,
         currencyCode: (data.currencyCode as string | undefined) ?? "USD",
         title: (gigData?.title as string | undefined) || gigType,
         hostName: (data.hostName as string | undefined) ?? (gigData?.hostName as string | undefined) ?? "",
@@ -100,6 +126,88 @@ export async function fetchCompletedEntries(uid: string): Promise<CompletedEntry
         gigType,
         gigTypeKey: (gigCollection && GIG_TYPE_KEYS[gigCollection]) || null,
         workerSlots: (gigData?.workerSlots as number | undefined) ?? 1,
+        gigId: gigId ?? "",
+        durationSeconds: (data.durationSeconds as number | undefined) ?? undefined,
+      };
+    })
+  );
+
+  return [...perCollection.flat(), ...multiWorker];
+}
+
+// Host-side mirror of fetchCompletedEntries above — same shape, same
+// single-vs-multi-slot split, just filtered by `hostId` (what this host has
+// paid out) instead of `workerId` (what a worker has earned). Used for the
+// host dashboard's spend chart.
+export async function fetchHostCompletedEntries(hostId: string): Promise<CompletedEntry[]> {
+  const perCollection = await Promise.all(
+    COMPLETED_GIG_COLLECTIONS.map(async (name) => {
+      const snap = await getDocs(
+        query(collection(db, name), where("hostId", "==", hostId), where("status", "==", "completed"))
+      );
+      return snap.docs
+        // A genuine multi-slot gig (workerSlots > 1) flips its own top-level
+        // `status` to 'completed' once every filled slot finishes (see
+        // host_payment_code_sheet.dart) — but each of its slots is already
+        // its own entry below via the `workers` collectionGroup query.
+        // Counting the parent doc here too would double the spend for every
+        // multi-slot gig this host has ever completed.
+        .filter((d) => ((d.data().workerSlots as number | undefined) ?? 1) <= 1)
+        .map((d) => {
+          const data = d.data();
+          const completedAt: Timestamp | undefined = data.completedAt ?? data.createdAt;
+          return {
+            completedAt: completedAt?.toDate() ?? new Date(),
+            amount: (data.finalAmount as number | undefined) ?? (data.budget as number | undefined) ?? 0,
+            currencyCode: (data.currencyCode as string | undefined) ?? "USD",
+            title: (data.title as string | undefined) || GIG_TYPE_LABELS[name],
+            hostName: (data.hostName as string | undefined) ?? "",
+            address: (data.address as string | undefined) ?? "",
+            gigType: GIG_TYPE_LABELS[name],
+            gigTypeKey: GIG_TYPE_KEYS[name],
+            workerSlots: (data.workerSlots as number | undefined) ?? 1,
+            // Quick gigs use assignedWorkerId; open/offered use workerId
+            // directly (see the respective *_gig_model.dart).
+            workerId: (data.workerId as string | undefined) ?? (data.assignedWorkerId as string | undefined) ?? "",
+            workerName: (data.workerName as string | undefined) ?? (data.assignedWorkerName as string | undefined) ?? "",
+            gigId: d.id,
+            durationSeconds: (data.durationSeconds as number | undefined) ?? undefined,
+          };
+        });
+    })
+  );
+
+  // Multi-worker gigs: each paid worker slot is its own completion record
+  // (with `rate` instead of `budget`) — one dashboard "spend" entry per
+  // worker paid, not per gig, same as the worker-side reader.
+  const workersSnap = await getDocs(
+    query(collectionGroup(db, "workers"), where("hostId", "==", hostId), where("status", "==", "completed"))
+  );
+  const multiWorker = await Promise.all(
+    workersSnap.docs.map(async (d) => {
+      const data = d.data();
+      const completedAt: Timestamp | undefined = data.completedAt ?? data.selectedAt;
+      const gigCollection = data.gigCollection as string | undefined;
+      const gigId = data.gigId as string | undefined;
+      const gigType = (gigCollection && GIG_TYPE_LABELS[gigCollection]) || "Gig";
+
+      const gigData =
+        gigCollection && gigId ? (await getDoc(doc(db, gigCollection, gigId))).data() : undefined;
+
+      return {
+        completedAt: completedAt?.toDate() ?? new Date(),
+        amount: (data.finalAmount as number | undefined) ?? (data.rate as number | undefined) ?? 0,
+        currencyCode: (data.currencyCode as string | undefined) ?? "USD",
+        title: (gigData?.title as string | undefined) || gigType,
+        hostName: "",
+        address: (gigData?.address as string | undefined) ?? "",
+        gigType,
+        gigTypeKey: (gigCollection && GIG_TYPE_KEYS[gigCollection]) || null,
+        workerSlots: (gigData?.workerSlots as number | undefined) ?? 1,
+        workerId: (data.workerId as string | undefined) ?? "",
+        workerName: (data.workerName as string | undefined) ?? "",
+        gigId: gigId ?? "",
+        durationSeconds: (data.durationSeconds as number | undefined) ?? undefined,
       };
     })
   );

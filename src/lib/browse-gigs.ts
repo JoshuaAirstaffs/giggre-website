@@ -4,12 +4,16 @@ import {
   arrayUnion,
   collection,
   collectionGroup,
+  deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   onSnapshot,
+  orderBy,
   query,
   serverTimestamp,
+  setDoc,
   updateDoc,
   where,
   GeoPoint,
@@ -17,6 +21,8 @@ import {
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { fetchHostCompletedEntries } from "@/lib/earnings";
+import { ratingAverage, type RatingAggregate } from "@/lib/ratings";
 
 // Mirrors the worker app's gigs-near-you feed — see
 // giggre_app/lib/features/gig_worker/presentation/widgets/gig_map_section.dart
@@ -37,6 +43,8 @@ export interface Gig {
   title: string;
   description: string;
   budget: number;
+  payType: string;
+  hourlyRate: number | null;
   currencyCode: string;
   status: string;
   hostName: string;
@@ -51,6 +59,82 @@ export interface Gig {
   createdAt: Date | null;
   workerSlots: number;
   filledSlotCount: number;
+  // Decorative only — never read by any pay calculation. See the field
+  // comment on CommonGigInput in post-gig.ts.
+  workDurationHours?: number;
+  // Set by closeRemainingSpots (host-gigs.ts) — the host has enough
+  // workers on a partially-filled open gig and doesn't want new applicants.
+  // Independent of workerSlots/status; see the field comment on
+  // HostGigDetail.slotsClosed for why that matters.
+  slotsClosed: boolean;
+}
+
+export interface HostLookupResult {
+  uid: string;
+  userId: string;
+  name: string;
+  email: string;
+  bio: string;
+  company: string;
+  photoUrl: string;
+  ratingAsHost: number;
+  ratingCount: number;
+  isOnline: boolean;
+  isVerified: boolean;
+  completedGigCount: number;
+  memberSince: Date | null;
+}
+
+// Backs the "view host profile" drawer on the worker's browse page — mirrors
+// fetchWorkerByUid in post-gig.ts, but for the gig's hostId/hostName instead.
+// completedGigCount reuses fetchHostCompletedEntries (status == "completed"
+// only), so cancelled/declined/no_worker gigs never count toward it.
+export async function fetchHostByUid(uid: string): Promise<HostLookupResult | null> {
+  const [snap, completedEntries] = await Promise.all([getDoc(doc(db, "users", uid)), fetchHostCompletedEntries(uid)]);
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  const ratingHost = data.ratingHost as RatingAggregate | undefined;
+  return {
+    uid: snap.id,
+    userId: (data.userId as string) ?? "",
+    name: (data.name as string) || "Unknown",
+    email: (data.email as string) ?? "",
+    bio: (data.bio as string) ?? "",
+    company: (data.company as string) ?? "",
+    photoUrl: (data.photoUrl as string) ?? "",
+    ratingAsHost: ratingAverage(ratingHost) ?? 0,
+    ratingCount: ratingHost?.count ?? 0,
+    isOnline: (data.isOnline as boolean | undefined) ?? false,
+    isVerified: (data.isVerified as string | undefined) === "verified",
+    completedGigCount: completedEntries.length,
+    memberSince: (data.createdAt as Timestamp | undefined)?.toDate() ?? null,
+  };
+}
+
+// Lighter than fetchHostByUid (a single field read, no rating/earnings
+// lookups) — backs the "Verified" badge next to the host's name on the gig
+// details panel, which needs this the moment a gig is selected rather than
+// only once the full host profile drawer is opened.
+export async function fetchHostIsVerified(uid: string): Promise<boolean> {
+  const snap = await getDoc(doc(db, "users", uid));
+  return (snap.data()?.isVerified as string | undefined) === "verified";
+}
+
+// Live-mirrors any user's own `blockedUsers` array — mirrors
+// _blockedUsersSub in gig_map_section.dart, which the worker feed filters
+// against so a blocked host's gigs disappear immediately, no reload needed.
+// Also reused for chat (both directions: mine, and the peer's) since it's
+// just "watch whose blockedUsers this uid's doc has," not host-specific.
+export function subscribeBlockedUserIds(uid: string, onData: (ids: string[]) => void): Unsubscribe {
+  return onSnapshot(doc(db, "users", uid), (snap) => {
+    onData((snap.data()?.blockedUsers as string[] | undefined) ?? []);
+  });
+}
+
+// Mirrors _blockUser in user_profile_sheet.dart — writes only to the acting
+// user's own doc via arrayUnion; the blocked user's doc is never touched.
+export async function blockUser(currentUid: string, targetUid: string): Promise<void> {
+  await updateDoc(doc(db, "users", currentUid), { blockedUsers: arrayUnion(targetUid) });
 }
 
 function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig {
@@ -65,6 +149,8 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     title: (data.title as string) || (gigType === "open" ? "Open Gig" : "Offered Gig"),
     description: (data.description as string) ?? "",
     budget: (data.budget as number) ?? 0,
+    payType: (data.payType as string | undefined) ?? "flat",
+    hourlyRate: (data.hourlyRate as number | undefined) ?? null,
     currencyCode: (data.currencyCode as string) ?? "USD",
     status: (data.status as string) ?? "",
     hostName: (data.hostName as string) ?? "",
@@ -79,6 +165,8 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     createdAt: (data.createdAt as Timestamp | undefined)?.toDate() ?? null,
     workerSlots: (data.workerSlots as number) ?? 1,
     filledSlotCount: (data.filledSlotCount as number) ?? 0,
+    workDurationHours: (data.workDurationHours as number | undefined) ?? undefined,
+    slotsClosed: (data.slotsClosed as boolean | undefined) ?? false,
   };
 }
 
@@ -93,8 +181,21 @@ export function subscribeOpenGigs(
   return onSnapshot(
     query(collection(db, "open_gigs"), where("status", "==", "open")),
     (snap) => {
+      // slotsClosed can only ever be set once filledSlotCount > 0 (see
+      // closeRemainingSpots in host-gigs.ts), which always means status has
+      // already moved off "open" — so this filter is currently unreachable
+      // given the query above, but kept as a defensive client-side check
+      // per closeRemainingSpots's own contract: a closed gig must never be
+      // shown as open to a worker, regardless of how it's queried. Combining
+      // an inequality filter with the existing where() would need a
+      // composite index, so this stays client-side.
       const gigs = snap.docs
-        .filter((d) => (d.data().hostId as string | undefined) !== uid && d.data().location != null)
+        .filter(
+          (d) =>
+            (d.data().hostId as string | undefined) !== uid &&
+            d.data().location != null &&
+            !(d.data().slotsClosed as boolean | undefined)
+        )
         .map((d) => toGig(d.id, d.data(), "open"));
       onData(gigs);
     },
@@ -116,6 +217,90 @@ export function subscribeOfferedGigs(
     },
     onError
   );
+}
+
+export interface SavedGigEntry {
+  id: string;
+  gigType: GigType;
+  savedAt: Date | null;
+}
+
+export interface SavedGig extends SavedGigEntry {
+  // null when the bookmarked gig doc no longer exists (deleted/expired) —
+  // the UI shows a "no longer available" placeholder for these instead of
+  // dropping them, so the worker can still see and clear the bookmark.
+  gig: Gig | null;
+}
+
+// Mirrors the worker app's Saved tab — see saved_screen.dart's `_savedRef`.
+// Bookmarks live in a `users/{uid}/savedGigs` subcollection (the doc ID *is*
+// the gig ID) rather than an array field, so toggling one is a set/delete on
+// its own doc, not arrayUnion/arrayRemove on the user doc.
+export function subscribeSavedGigEntries(
+  uid: string,
+  onData: (entries: SavedGigEntry[]) => void,
+  onError: (err: unknown) => void
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, "users", uid, "savedGigs"), orderBy("savedAt", "desc")),
+    (snap) => {
+      onData(
+        snap.docs.map((d) => ({
+          id: d.id,
+          gigType: ((d.data().gigType as GigType | undefined) ?? "open") as GigType,
+          savedAt: (d.data().savedAt as Timestamp | undefined)?.toDate() ?? null,
+        }))
+      );
+    },
+    onError
+  );
+}
+
+// Mirrors _toggleSavedGig in gig_worker_screen.dart — a plain set/delete on
+// the bookmark doc, keyed by gig id, so mobile and web share the same
+// savedGigs subcollection.
+export async function toggleSavedGig(uid: string, gigId: string, gigType: GigType, isSaved: boolean): Promise<void> {
+  const ref = doc(db, "users", uid, "savedGigs", gigId);
+  if (isSaved) {
+    await deleteDoc(ref);
+  } else {
+    await setDoc(ref, { gigType, savedAt: serverTimestamp() });
+  }
+}
+
+// Firestore's documentId() "in" queries cap at 30 values.
+const WHERE_IN_CHUNK_SIZE = 30;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
+async function fetchGigsByIds(ids: string[], collectionName: string, gigType: GigType): Promise<Map<string, Gig>> {
+  if (ids.length === 0) return new Map();
+  const snaps = await Promise.all(
+    chunk(ids, WHERE_IN_CHUNK_SIZE).map((c) => getDocs(query(collection(db, collectionName), where(documentId(), "in", c))))
+  );
+  const map = new Map<string, Gig>();
+  snaps.forEach((snap) => snap.docs.forEach((d) => map.set(d.id, toGig(d.id, d.data(), gigType))));
+  return map;
+}
+
+// One-shot hydrate of the live bookmark entries into full gig docs — mirrors
+// _fetchGigs in saved_screen.dart (live bookmark ids, one-shot gig fetch on
+// each id-set change, not a live listener on the gigs themselves).
+export async function fetchSavedGigs(entries: SavedGigEntry[]): Promise<SavedGig[]> {
+  const openIds = entries.filter((e) => e.gigType === "open").map((e) => e.id);
+  const offeredIds = entries.filter((e) => e.gigType === "offered").map((e) => e.id);
+  const [openMap, offeredMap] = await Promise.all([
+    fetchGigsByIds(openIds, "open_gigs", "open"),
+    fetchGigsByIds(offeredIds, "offered_gigs", "offered"),
+  ]);
+  return entries.map((e) => ({
+    ...e,
+    gig: (e.gigType === "open" ? openMap : offeredMap).get(e.id) ?? null,
+  }));
 }
 
 // Statuses between "host accepted this application" and "fully resolved" —
@@ -153,10 +338,12 @@ export async function applyToOpenGig(gigId: string, workerId: string, workerName
   const status = (data.status as string) ?? "";
   const workerSlots = (data.workerSlots as number) ?? 1;
   const filledSlotCount = (data.filledSlotCount as number) ?? 0;
+  const slotsClosed = (data.slotsClosed as boolean | undefined) ?? false;
   const stillAcceptingApplicants =
-    workerSlots > 1
+    !slotsClosed &&
+    (workerSlots > 1
       ? (status === "open" || status === "partially_filled") && filledSlotCount < workerSlots
-      : status === "open";
+      : status === "open");
   if (!stillAcceptingApplicants) return { ok: false, reason: "This gig is no longer available." };
 
   const applicants = (data.applicants as ApplicantEntry[] | undefined) ?? [];
@@ -203,6 +390,8 @@ export interface AcceptedApplication {
   title: string;
   hostName: string;
   budget: number;
+  payType: string;
+  hourlyRate: number | null;
   currencyCode: string;
   address: string;
   status: string;
@@ -211,6 +400,9 @@ export interface AcceptedApplication {
   // (true) or directly on the open_gigs/{gigId} doc itself (false) — needed
   // to know which document a cancellation request should target.
   isMultiWorker: boolean;
+  // Set when status flips to 'working' (see _startWork in working_ui.dart) —
+  // the live duration timer is just `now - workStartedAt`, ticked locally.
+  workStartedAt: Date | null;
 }
 
 // A gig this worker applied to that a host has since accepted — the
@@ -241,11 +433,14 @@ export function subscribeAcceptedApplications(
           title: (data.title as string) || "Open Gig",
           hostName: (data.hostName as string) ?? "",
           budget: (data.budget as number) ?? 0,
+          payType: (data.payType as string | undefined) ?? "flat",
+          hourlyRate: (data.hourlyRate as number | undefined) ?? null,
           currencyCode: (data.currencyCode as string) ?? "USD",
           address: (data.address as string) ?? "",
           status: (data.status as string) ?? "",
           scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
           isMultiWorker: false,
+          workStartedAt: (data.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
         };
       });
       singleReady = true;
@@ -274,11 +469,14 @@ export function subscribeAcceptedApplications(
             title: (gigData.title as string) || "Open Gig",
             hostName: (slot.hostName as string) ?? (gigData.hostName as string) ?? "",
             budget: (slot.rate as number) ?? 0,
+            payType: (gigData.payType as string | undefined) ?? "flat",
+            hourlyRate: (gigData.hourlyRate as number | undefined) ?? null,
             currencyCode: (slot.currencyCode as string) ?? (gigData.currencyCode as string) ?? "USD",
             address: (gigData.address as string) ?? "",
             status: (slot.status as string) ?? "",
             scheduledDate: (gigData.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
             isMultiWorker: true,
+            workStartedAt: (slot.workStartedAt as Timestamp | undefined)?.toDate() ?? null,
           };
           return app;
         })

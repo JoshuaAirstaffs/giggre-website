@@ -4,45 +4,28 @@ import { useEffect, type ReactNode } from "react";
 import { Provider } from "react-redux";
 import { PersistGate } from "redux-persist/integration/react";
 import { onAuthStateChanged } from "firebase/auth";
-import { GeoPoint, Timestamp } from "firebase/firestore";
-import { auth } from "@/lib/firebase";
-import { getUserProfile } from "@/lib/registration";
+import { doc, onSnapshot, type Unsubscribe } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+import { sanitizeFirestoreData } from "@/lib/firestore-sanitize";
 import { store, persistor } from "./store";
 import { useAppDispatch } from "./hooks";
 import { setAuthUser, setProfile, clearUser, type UserProfile } from "./userSlice";
 
 function sanitizeProfile(data: Record<string, unknown> | null): UserProfile | null {
   if (!data) return null;
-  const { createdAt, updatedAt, location, earnings, ...rest } = data;
-  const earningsData = earnings as Record<string, unknown> | undefined;
-  return {
-    ...rest,
-    createdAt: createdAt instanceof Timestamp ? createdAt.toDate().toISOString() : undefined,
-    // Some fields (e.g. a top-level `updatedAt` stamped by admin tooling
-    // outside this app) can be raw Firestore Timestamps we don't otherwise
-    // account for — Redux flags those as non-serializable, so normalize here.
-    updatedAt: updatedAt instanceof Timestamp ? updatedAt.toDate().toISOString() : undefined,
-    location:
-      location instanceof GeoPoint
-        ? { latitude: location.latitude, longitude: location.longitude }
-        : undefined,
-    earnings: earningsData
-      ? {
-          ...earningsData,
-          updatedAt:
-            earningsData.updatedAt instanceof Timestamp
-              ? earningsData.updatedAt.toDate().toISOString()
-              : undefined,
-        }
-      : undefined,
-  };
+  return sanitizeFirestoreData(data) as UserProfile;
 }
 
 function FirebaseAuthListener() {
   const dispatch = useAppDispatch();
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+    let unsubscribeProfile: Unsubscribe | null = null;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+      unsubscribeProfile?.();
+      unsubscribeProfile = null;
+
       if (!firebaseUser) {
         dispatch(clearUser());
         return;
@@ -57,15 +40,22 @@ function FirebaseAuthListener() {
         })
       );
 
-      try {
-        const profile = await getUserProfile(firebaseUser.uid);
-        dispatch(setProfile(sanitizeProfile(profile)));
-      } catch (err) {
-        console.error("Failed to load user profile:", err);
-      }
+      // A live subscription (rather than a one-time getDoc) so the store
+      // never gets stuck on a pre-registration "no doc yet" snapshot — right
+      // after signup the profile doc is still being written when auth state
+      // first fires, and this listener re-delivers the real data the moment
+      // it lands instead of silently keeping the earlier null read.
+      unsubscribeProfile = onSnapshot(
+        doc(db, "users", firebaseUser.uid),
+        (snap) => dispatch(setProfile(sanitizeProfile(snap.exists() ? snap.data() : null))),
+        (err) => console.error("Failed to load user profile:", err)
+      );
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeProfile?.();
+      unsubscribeAuth();
+    };
   }, [dispatch]);
 
   return null;

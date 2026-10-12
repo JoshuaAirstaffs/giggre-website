@@ -15,6 +15,13 @@ export function formatDate(date?: string | number | Date) {
   })
 }
 
+/** Masks everything but the first couple characters of an email's local part. */
+export function maskEmail(email: string) {
+  const [local, domain] = email.split("@")
+  if (!domain) return email
+  return `${local.slice(0, 2)}***@${domain}`
+}
+
 /** Currency symbol for the codes this app actually uses (PH/US), same as the mobile app. */
 export function currencySymbol(code?: string) {
   if (code === "USD") return "$"

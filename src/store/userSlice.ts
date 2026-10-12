@@ -1,4 +1,5 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
+import type { RatingAggregate } from "@/lib/ratings";
 
 export interface AuthUser {
   uid: string;
@@ -28,9 +29,12 @@ export interface UserProfile {
   skills?: string[];
   skillsXP?: Record<string, number>;
   signInMethod?: "email" | "google" | "apple";
-  ratingAsWorker?: number;
-  ratingAsHost?: number;
-  ratingCount?: number;
+  // Maintained by the shared Cloud Function (functions/src/ratings.ts
+  // onRatingCreated) from the `ratings` collection — see ratings.ts's own
+  // comment. Absent entirely until the user's first rating; never defaulted
+  // to a flat number here, use ratingAverage() at read time instead.
+  ratingWorker?: RatingAggregate;
+  ratingHost?: RatingAggregate;
   isVerified?: string;
   isOnline?: boolean;
   // Written by giggre_app's dashboard toggles (dashboard_summary_card.dart) —
@@ -42,6 +46,15 @@ export interface UserProfile {
   seekingQuickGigs?: boolean;
   autoAccept?: boolean;
   openGigsUnlocked?: boolean;
+  // Written by giggre_app's decline-suspension flow (gig_worker_screen.dart)
+  // when a worker declines too many Quick Gigs in a day — read-only here,
+  // same as the app's own Settings screen. `suspended_until` is a Timestamp
+  // in Firestore, sanitized to an ISO string by ReduxProvider before it
+  // reaches this state. `decline_count` only counts today's declines; it's
+  // stale (should read as 0) once `decline_count_date` isn't today.
+  suspended_until?: string;
+  decline_count?: number;
+  decline_count_date?: string;
   fcmTokens?: string[];
   location?: { latitude: number; longitude: number };
   referredBy?: string | null;

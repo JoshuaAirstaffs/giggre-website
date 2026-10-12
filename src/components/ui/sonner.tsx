@@ -39,6 +39,12 @@ const Toaster = ({ ...props }: ToasterProps) => {
       toastOptions={{
         classNames: {
           toast: "cn-toast",
+          // Sonner's own [data-description] rule hardcodes a fixed gray
+          // (#3f3f3f light / #e8e8e8 dark) instead of using --normal-text,
+          // which reads as low-contrast against this app's --popover
+          // background — pin it to the same design-system foreground token
+          // as the title, just slightly muted via opacity.
+          description: "!text-popover-foreground/80",
         },
       }}
       {...props}

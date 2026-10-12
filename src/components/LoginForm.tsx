@@ -7,6 +7,7 @@ import { signInWithEmailAndPassword, signInWithPopup, type UserCredential } from
 import { toast } from "sonner";
 import { auth, appleProvider, googleProvider } from "@/lib/firebase";
 import PasswordInput from "@/components/PasswordInput";
+import { markFreshLogin } from "@/lib/verification-prompt";
 
 async function establishSession(idToken: string) {
   const res = await fetch("/api/auth/session", {
@@ -54,6 +55,7 @@ export default function LoginForm() {
       const credential = await signIn();
       const idToken = await credential.user.getIdToken();
       await establishSession(idToken);
+      markFreshLogin();
       toast.success("Logged in successfully");
       router.push("/select-role");
       router.refresh();

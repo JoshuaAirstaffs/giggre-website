@@ -17,14 +17,15 @@ import {
   COUNTRIES,
   DEFAULT_COUNTRY,
   PASSWORD_REQUIREMENTS,
+  buildFullPhone,
   createUserProfile,
   generateUserId,
   getUserProfile,
   isPasswordStrong,
-  isPhoneValid,
   validateReferralCode,
   type ReferralLookup,
 } from "@/lib/registration";
+import { markFreshLogin } from "@/lib/verification-prompt";
 import {
   Select,
   SelectContent,
@@ -32,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Check, Circle } from "lucide-react";
 
 async function establishSession(idToken: string) {
@@ -63,6 +65,8 @@ function authErrorMessage(err: unknown): string | null {
       return "No internet connection. Check your connection and try again.";
     case "auth/user-disabled":
       return "This account has been disabled. Contact support for help.";
+    case "auth/operation-not-allowed":
+      return "Email registration is currently unavailable.";
     default:
       return "Something went wrong. Please try again.";
   }
@@ -115,6 +119,34 @@ function PasswordChecklist({ password }: { password: string }) {
         );
       })}
     </div>
+  );
+}
+
+function LegalAgeLine({ confirmed, onChange }: { confirmed: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-2 text-xs text-muted">
+      <Checkbox checked={confirmed} onCheckedChange={onChange} className="mt-0.5" />
+      I confirm that I am of legal age and legally allowed to work and accept gigs.
+    </label>
+  );
+}
+
+function ConsentLine({ agreed, onChange }: { agreed: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex items-start gap-2 text-xs text-muted">
+      <Checkbox checked={agreed} onCheckedChange={onChange} className="mt-0.5" />
+      <span>
+        I have read and agree to Giggre&apos;s{" "}
+        <Link href="/terms" target="_blank" className="font-semibold text-ink underline">
+          Terms of Service
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy-policy" target="_blank" className="font-semibold text-ink underline">
+          Privacy Policy
+        </Link>
+        .
+      </span>
+    </label>
   );
 }
 
@@ -174,6 +206,8 @@ export default function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [legalAgeConfirmed, setLegalAgeConfirmed] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -188,6 +222,7 @@ export default function RegisterForm() {
   async function finishAndRedirect(user: User, successMessage: string) {
     const idToken = await user.getIdToken();
     await establishSession(idToken);
+    markFreshLogin();
     toast.success(successMessage);
     router.push("/select-role");
     router.refresh();
@@ -236,6 +271,14 @@ export default function RegisterForm() {
       setError("All fields are required.");
       return;
     }
+    if (!legalAgeConfirmed) {
+      setError("Please confirm that you are of legal age to continue.");
+      return;
+    }
+    if (!agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     if (!isPasswordStrong(password)) {
       setError(
         "Password must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a special character."
@@ -246,9 +289,11 @@ export default function RegisterForm() {
       setError("Passwords do not match.");
       return;
     }
-    const fullPhone = `${country.dialCode}${phone.trim()}`;
-    if (!isPhoneValid(fullPhone)) {
-      setError("Enter a valid phone number.");
+    const fullPhone = buildFullPhone(country.dialCode, phone);
+    if (!fullPhone) {
+      setError(
+        `That doesn't look like a valid ${country.name} (${country.dialCode}) phone number. Check the number or change the country code.`
+      );
       return;
     }
     const referrer = await resolveReferrer(referralCode);
@@ -276,7 +321,7 @@ export default function RegisterForm() {
         referralCodeUsed: referralCode.trim().toUpperCase() || undefined,
       });
 
-      await finishAndRedirect(credential.user, "Account created");
+      await finishAndRedirect(credential.user, "Welcome to Giggre! Your account is ready.");
     } catch (err) {
       const message = authErrorMessage(err);
       if (message) {
@@ -305,9 +350,19 @@ export default function RegisterForm() {
       setError("Name and phone number are required.");
       return;
     }
-    const fullPhone = `${country.dialCode}${phone.trim()}`;
-    if (!isPhoneValid(fullPhone)) {
-      setError("Enter a valid phone number.");
+    if (!legalAgeConfirmed) {
+      setError("Please confirm that you are of legal age to continue.");
+      return;
+    }
+    if (!agreedToTerms) {
+      setError("Please agree to the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
+    const fullPhone = buildFullPhone(country.dialCode, phone);
+    if (!fullPhone) {
+      setError(
+        `That doesn't look like a valid ${country.name} (${country.dialCode}) phone number. Check the number or change the country code.`
+      );
       return;
     }
     const referrer = await resolveReferrer(referralCode);
@@ -331,7 +386,7 @@ export default function RegisterForm() {
         referrer,
         referralCodeUsed: referralCode.trim().toUpperCase() || undefined,
       });
-      await finishAndRedirect(pendingOAuthUser, "Account created");
+      await finishAndRedirect(pendingOAuthUser, "Welcome to Giggre! Your account is ready.");
     } catch {
       // Firestore write failed — sign out so no one is left authenticated
       // without a profile record, matching the app's cleanup behavior.
@@ -372,6 +427,11 @@ export default function RegisterForm() {
             placeholder="e.g. GX82KL19"
             className={inputClass}
           />
+        </div>
+
+        <div className="space-y-2">
+          <LegalAgeLine confirmed={legalAgeConfirmed} onChange={setLegalAgeConfirmed} />
+          <ConsentLine agreed={agreedToTerms} onChange={setAgreedToTerms} />
         </div>
 
         {error && (
@@ -453,6 +513,11 @@ export default function RegisterForm() {
           placeholder="e.g. GX82KL19"
           className={inputClass}
         />
+      </div>
+
+      <div className="space-y-2">
+        <LegalAgeLine confirmed={legalAgeConfirmed} onChange={setLegalAgeConfirmed} />
+        <ConsentLine agreed={agreedToTerms} onChange={setAgreedToTerms} />
       </div>
 
       {error && (

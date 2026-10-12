@@ -6,11 +6,18 @@ import { db } from "@/lib/firebase";
 // Docs only carry `userId` / `category` / `message` / `createdAt`; there's no
 // `title` field, so the title is derived from `category` (and `request_status`
 // for request-type categories), same as _WorkerNotificationsSheetState._activities.
-const NOTIFICATIONS_LIMIT = 20;
+const NOTIFICATIONS_DISPLAY_LIMIT = 20;
 
-// Matches the Flutter sheet's kAccountWindow — account notifications older
-// than this aren't counted as "recent" for the header badge.
-const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+// The Firestore query itself asks for far more than what's displayed —
+// `where(userId==uid)` has no `orderBy` (avoiding a composite index, per the
+// note below), so once an account has more matching docs than the query's
+// `limit()`, Firestore does NOT guarantee the returned subset is the most
+// recent ones — a brand-new notification could silently fall outside a
+// small limit and never surface. Querying a generous ceiling here, then
+// sorting client-side and slicing down to NOTIFICATIONS_DISPLAY_LIMIT,
+// means a new notification (always the most recent by createdAt) is
+// essentially guaranteed to be included and always sorts first.
+export const NOTIFICATIONS_FETCH_LIMIT = 300;
 
 const REQUEST_STATUS_TITLES: Record<string, Record<string, string>> = {
   verification_requests: {
@@ -39,37 +46,65 @@ export interface NotificationEntry {
   createdAt: Date;
 }
 
+// `userId` on a notifications doc is just "who to show this to" — it carries
+// no role, so a dual-role account (one uid acting as both host and worker)
+// gets every doc back regardless of which side of the app they're on. Most
+// categories are genuinely account-level and belong on both (verification,
+// generic notices), but a few are only meaningful for one role:
+// - "new_applicant" is written with userId = the gig's hostId (see
+//   browse-gigs.ts) when a worker applies — purely host-relevant.
+// - "skill_request" only exists because a worker submitted a skill for
+//   verification (toolchest) — purely worker-relevant.
+const CATEGORY_EXCLUDED_FOR_ROLE: Record<"host" | "worker", ReadonlySet<string>> = {
+  host: new Set(["skill_request"]),
+  worker: new Set(["new_applicant"]),
+};
+
+export function timeAgo(date: Date) {
+  const seconds = Math.max(0, (Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
 // Live listener rather than a one-time fetch — a new notification (e.g. a
 // host approving a request) should show up in the bell without a reload.
 // No orderBy here on purpose — the Firestore query only filters by userId
 // (matching the Flutter sheet), then sorts client-side, avoiding the need
-// for a composite index on (userId, createdAt).
+// for a composite index on (userId, createdAt). See NOTIFICATIONS_FETCH_LIMIT
+// above for why the query limit itself is much bigger than what's displayed.
 export function subscribeNotifications(
   uid: string,
   onData: (notifications: NotificationEntry[]) => void,
-  onError: (err: unknown) => void
+  onError: (err: unknown) => void,
+  displayLimit: number = NOTIFICATIONS_DISPLAY_LIMIT,
+  role?: "host" | "worker"
 ): Unsubscribe {
+  const excludedCategories = role ? CATEGORY_EXCLUDED_FOR_ROLE[role] : undefined;
   return onSnapshot(
-    query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_LIMIT)),
+    query(collection(db, "notifications"), where("userId", "==", uid), limit(NOTIFICATIONS_FETCH_LIMIT)),
     (snap) => {
-      const entries = snap.docs.map((d) => {
-        const data = d.data();
-        const createdAt: Timestamp | undefined = data.createdAt;
-        const category = (data.category as string | undefined) ?? "";
-        const requestStatus = (data.request_status as string | undefined) ?? "";
-        return {
-          id: d.id,
-          title: titleForCategory(category, requestStatus),
-          body: (data.message as string | undefined) ?? "",
-          createdAt: createdAt?.toDate() ?? new Date(),
-        };
-      });
-      onData(entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()));
+      const entries = snap.docs
+        .filter((d) => !excludedCategories?.has(d.data().category as string))
+        .map((d) => {
+          const data = d.data();
+          const createdAt: Timestamp | undefined = data.createdAt;
+          const category = (data.category as string | undefined) ?? "";
+          const requestStatus = (data.request_status as string | undefined) ?? "";
+          return {
+            id: d.id,
+            title: titleForCategory(category, requestStatus),
+            body: (data.message as string | undefined) ?? "",
+            createdAt: createdAt?.toDate() ?? new Date(),
+          };
+        });
+      entries.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      onData(entries.slice(0, displayLimit));
     },
     onError
   );
-}
-
-export function isRecent(date: Date) {
-  return Date.now() - date.getTime() <= RECENT_WINDOW_MS;
 }
