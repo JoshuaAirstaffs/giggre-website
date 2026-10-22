@@ -6,6 +6,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 import { findActiveUrl, type NavItem } from "@/components/nav-main"
 import ThemeToggle from "./ThemeToggle"
 import NotificationBell from "./NotificationBell"
+import GigPointsBadge from "./GigPointsBadge"
 
 export function SiteHeader({
   title = "Home",
@@ -46,6 +47,7 @@ export function SiteHeader({
         <div className="flex justify-between items-center w-full">
           <h1 className="text-base font-medium">{resolvedTitle}</h1>
           <div className="flex items-center gap-2">
+            {role && <GigPointsBadge role={role} />}
             {notifications && <NotificationBell role={role} />}
             <ThemeToggle />
           </div>

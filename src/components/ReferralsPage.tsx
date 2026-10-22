@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Calendar,
@@ -8,6 +9,7 @@ import {
   ChevronRight,
   Clock,
   Copy,
+  GitBranch,
   Lock,
   QrCode,
   ShieldCheck,
@@ -34,6 +36,7 @@ import {
   TOTAL_REFERRAL_LEVELS,
   type ReferredPerson,
 } from "@/lib/referrals";
+import { countryCodeFromPhone, fetchReferralTreeCountries } from "@/lib/referral-tree";
 
 // Mirrors giggre_app/lib/screens/referrals/my_referral_screen.dart's 3-tab
 // screen exactly (Referral Code / My Referrals / Roadmap) — that screen has
@@ -84,12 +87,23 @@ function VerificationChip({ status }: { status: string }) {
 export default function ReferralsPage({ role }: { role: "host" | "worker" }) {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
   const referrals = useAppSelector((root) => root.user.profile?.referrals);
+  const phone = useAppSelector((root) => root.user.profile?.phone);
 
   const code = referrals?.referral_code ?? "";
   const level = referrals?.referral_level ?? 0;
   const referralsCount = referrals?.referrals_count ?? 0;
   const verifiedCount = referrals?.verified_referrals ?? 0;
   const progress = milestoneProgress(referralsCount);
+
+  // The app gates this by GPS-detected country (referral_settings/tree); the
+  // website instead makes a best-effort guess from the stored phone's dial
+  // code — see countryCodeFromPhone.
+  const [treeCountries, setTreeCountries] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    fetchReferralTreeCountries().then(setTreeCountries).catch(() => {});
+  }, []);
+  const countryCode = countryCodeFromPhone(phone);
+  const showReferralTree = countryCode != null && treeCountries.has(countryCode);
 
   const gradient =
     role === "host"
@@ -283,6 +297,21 @@ export default function ReferralsPage({ role }: { role: "host" | "worker" }) {
               </div>
             </Card>
           </div>
+
+          {showReferralTree && (
+            <Link href={`/app/${role}/referrals/tree`} className="block">
+              <Card className="flex-row items-center gap-3 border-hairline p-4 transition-colors hover:bg-accent">
+                <div className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${tintClass} ${textClass}`}>
+                  <GitBranch className="size-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-ink">Referral Tree</p>
+                  <p className="truncate text-xs text-muted">See who your referrals invited and what you&apos;ve earned</p>
+                </div>
+                <ChevronRight className="size-4 shrink-0 text-muted" />
+              </Card>
+            </Link>
+          )}
 
           {peopleLoading ? (
             <div className="space-y-2">

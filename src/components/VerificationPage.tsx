@@ -68,7 +68,7 @@ function StatusBanner({ status }: { status: VerificationStatus }) {
   const copy = STATUS_COPY[status];
   if (status === "verified") {
     return (
-      <Alert className="my-6 max-w-2xl border-(--success-tint) bg-(--success-tint) text-(--success-text)">
+      <Alert className="mx-auto my-6 max-w-2xl border-(--success-tint) bg-(--success-tint) text-(--success-text)">
         <CircleCheck />
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription className="py-1">{copy.subtitle}</AlertDescription>
@@ -77,7 +77,7 @@ function StatusBanner({ status }: { status: VerificationStatus }) {
   }
   if (status === "pending") {
     return (
-      <Alert className="my-6 max-w-2xl border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
+      <Alert className="mx-auto my-6 max-w-2xl border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50">
         <Clock />
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription className="py-1">{copy.subtitle}</AlertDescription>
@@ -86,7 +86,7 @@ function StatusBanner({ status }: { status: VerificationStatus }) {
   }
   if (status === "rejected") {
     return (
-      <Alert className="my-6 max-w-2xl border-(--danger-tint) bg-(--danger-tint) text-(--danger-text)">
+      <Alert className="mx-auto my-6 max-w-2xl border-(--danger-tint) bg-(--danger-tint) text-(--danger-text)">
         <CircleX />
         <AlertTitle>{copy.title}</AlertTitle>
         <AlertDescription className="py-1">{copy.subtitle}</AlertDescription>
@@ -94,7 +94,7 @@ function StatusBanner({ status }: { status: VerificationStatus }) {
     );
   }
   return (
-    <Alert className="my-6 max-w-2xl border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-50">
+    <Alert className="mx-auto my-6 max-w-2xl border-blue-200 bg-blue-50 text-blue-900 dark:border-blue-900 dark:bg-blue-950 dark:text-blue-50">
       <ShieldAlert />
       <AlertTitle>{copy.title}</AlertTitle>
       <AlertDescription className="py-1">{copy.subtitle}</AlertDescription>
@@ -175,7 +175,7 @@ export default function VerificationPage({ role }: { role: "host" | "worker" }) 
 
       <StatusBanner status={status} />
 
-      <div className="max-w-2xl space-y-8">
+      <div className="mx-auto max-w-2xl space-y-8">
         <div>
           <p className="mb-3 text-sm font-medium text-muted">Why Get Verified</p>
           <div className="space-y-2">

@@ -1,4 +1,4 @@
-import { Bell, FileText, Gift, LifeBuoy, MessageCircle, Settings, ShieldCheck, ShieldOff, UserIcon } from "lucide-react";
+import { Banknote, Bell, FileText, Gift, LifeBuoy, MessageCircle, Settings, ShieldCheck, ShieldOff, Star, UserIcon } from "lucide-react";
 import type { NavItem } from "@/components/nav-main";
 
 // Pages that make sense for both roles (a single account's profile,
@@ -12,6 +12,8 @@ import type { NavItem } from "@/components/nav-main";
 export function sharedNavItems(basePath: "/app/host" | "/app/worker"): NavItem[] {
   return [
     { title: "Profile", url: `${basePath}/profile`, icon: <UserIcon /> },
+    { title: "Gig Points", url: `${basePath}/gig-points`, icon: <Star /> },
+    { title: "Gig Wallet", url: `${basePath}/wallet`, icon: <Banknote /> },
     { title: "Documents", url: `${basePath}/documents`, icon: <FileText /> },
     { title: "Verification", url: `${basePath}/verification`, icon: <ShieldCheck /> },
     { title: "Notifications", url: `${basePath}/notifications`, icon: <Bell /> },
