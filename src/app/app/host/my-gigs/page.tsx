@@ -29,7 +29,7 @@ import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
   fetchHostGigDetail,
   fetchHostGigs,
-  OPEN_CARD_STATUSES,
+  isOpenAwaitingGig,
   type HostGig,
   type HostGigDetail,
 } from "@/lib/host-gigs";
@@ -40,9 +40,9 @@ type FilterKey = "all" | GigTypeKey;
 
 const FILTERS: { key: FilterKey; label: string; activeClass: string }[] = [
   { key: "all", label: "All", activeClass: "data-active:bg-ink data-active:text-white" },
-  { key: "quick", label: "Quick", activeClass: "data-active:bg-(--quick-start) data-active:text-white" },
-  { key: "open", label: "Open", activeClass: "data-active:bg-worker data-active:text-white" },
-  { key: "offered", label: "Offered", activeClass: "data-active:bg-(--offered-start) data-active:text-white" },
+  { key: "quick", label: "Quick Gig", activeClass: "data-active:bg-(--quick-start) data-active:text-white" },
+  { key: "open", label: "Open Gig", activeClass: "data-active:bg-worker data-active:text-white" },
+  { key: "offered", label: "Offered Gig", activeClass: "data-active:bg-(--offered-start) data-active:text-white" },
 ];
 
 function formatStatus(status: string) {
@@ -118,11 +118,10 @@ export default function MyGigsPage() {
     return c;
   }, [gigs]);
 
-  // "open"/"filled" here are the gig's own status (open_gigs still awaiting
-  // an applicant, or already fully staffed) — distinct from the "Open" tab
-  // above, which is the gig TYPE and includes open_gigs that have since been
-  // completed/cancelled/etc.
-  const openGigsCount = useMemo(() => gigs.filter((gig) => OPEN_CARD_STATUSES.has(gig.status)).length, [gigs]);
+  // Open-type gigs that aren't finished/cancelled yet — distinct from the
+  // "Open Gig" tab above, which is the gig TYPE and includes open_gigs that
+  // have since been completed/cancelled/etc.
+  const openGigsCount = useMemo(() => gigs.filter(isOpenAwaitingGig).length, [gigs]);
 
   const filtered = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -130,7 +129,7 @@ export default function MyGigsPage() {
       (gig) =>
         (filter === "all" || gig.gigType === filter) &&
         (!query || gig.title.toLowerCase().includes(query)) &&
-        (!openOnly || OPEN_CARD_STATUSES.has(gig.status))
+        (!openOnly || isOpenAwaitingGig(gig))
     );
   }, [gigs, filter, search, openOnly]);
 

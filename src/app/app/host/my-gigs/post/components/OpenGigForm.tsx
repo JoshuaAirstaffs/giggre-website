@@ -41,10 +41,15 @@ export default function OpenGigForm() {
   const [lastGigId, setLastGigId] = useState<string | null>(null);
 
   useEffect(() => {
+    // Firestore's `skills` collection requires an authenticated read
+    // (isAuth() in the rules) — without this gate, the request can fire
+    // before the client's auth token is attached yet, right after a fresh
+    // page load, and fail with "Missing or insufficient permissions."
+    if (!authUser?.uid) return;
     fetchSkillNames()
       .then(setSkills)
       .catch((err) => console.error("Failed to load skills:", err));
-  }, []);
+  }, [authUser?.uid]);
 
   // "Post Again" from a past gig's detail page (see post-again.ts) — seeds
   // everything except schedule/location, which stay blank for the host to

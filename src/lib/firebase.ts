@@ -25,10 +25,10 @@ const devFirebaseConfig = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_DEV_APP_ID!,
 };
 
-const useDevProject = process.env.NEXT_PUBLIC_FIREBASE_DB_ENV === "dev";
+export const useDevProject = process.env.NEXT_PUBLIC_FIREBASE_DB_ENV === "dev";
 const firebaseConfig = useDevProject ? devFirebaseConfig : prodFirebaseConfig;
 
-const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+export const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);

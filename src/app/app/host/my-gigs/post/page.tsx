@@ -40,7 +40,7 @@ function PostGigPageContent() {
     <JoshDiv>
       <TitlePage title="Post a gig" description="Choose how you want to get this job done" />
 
-      <div className="mt-6 max-w-6xl">
+      <div className="mx-auto mt-6 max-w-6xl">
         <Tabs defaultValue={defaultTab}>
           <TabsList className="bg-secondary">
             <TabsTrigger value="quick" className="gap-1.5 data-active:bg-(--quick-start) data-active:text-white">

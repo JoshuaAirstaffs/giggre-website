@@ -387,6 +387,11 @@ export async function withdrawApplication(gigId: string, workerId: string): Prom
 
 export interface AcceptedApplication {
   gigId: string;
+  // Always "open" today — this function only tracks open_gigs acceptances
+  // (quick/offered gigs aren't covered here yet). Exposed so callers like
+  // the Gig Points current-gig-reward card can look up this gig's own
+  // gig_points ledger entry, which is keyed by collection name.
+  gigType: "open";
   title: string;
   hostName: string;
   budget: number;
@@ -430,6 +435,7 @@ export function subscribeAcceptedApplications(
         const data = d.data();
         return {
           gigId: d.id,
+          gigType: "open" as const,
           title: (data.title as string) || "Open Gig",
           hostName: (data.hostName as string) ?? "",
           budget: (data.budget as number) ?? 0,
@@ -466,6 +472,7 @@ export function subscribeAcceptedApplications(
           if (!gigData) return null;
           const app: AcceptedApplication = {
             gigId,
+            gigType: "open",
             title: (gigData.title as string) || "Open Gig",
             hostName: (slot.hostName as string) ?? (gigData.hostName as string) ?? "",
             budget: (slot.rate as number) ?? 0,

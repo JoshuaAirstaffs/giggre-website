@@ -3,7 +3,7 @@
 import { Banknote, Briefcase, CheckCircle2, Megaphone, type LucideIcon } from "lucide-react";
 import { currencySymbol } from "@/lib/utils";
 import { startOfMonth, sumAmountBetween, type CompletedEntry } from "@/lib/earnings";
-import { isActiveGigStatus, OPEN_CARD_STATUSES, type HostGig } from "@/lib/host-gigs";
+import { isActiveGigStatus, isOpenAwaitingGig, type HostGig } from "@/lib/host-gigs";
 
 function StatTile({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: React.ReactNode }) {
   return (
@@ -27,7 +27,7 @@ interface DashboardStatsRowProps {
 
 export default function DashboardStatsRow({ gigs, completedEntries, currencyCode }: DashboardStatsRowProps) {
   const activeCount = gigs.filter((g) => isActiveGigStatus(g.status)).length;
-  const openCount = gigs.filter((g) => OPEN_CARD_STATUSES.has(g.status)).length;
+  const openCount = gigs.filter(isOpenAwaitingGig).length;
 
   const monthStart = startOfMonth(new Date());
   const completedThisMonth = completedEntries.filter((e) => e.completedAt >= monthStart).length;

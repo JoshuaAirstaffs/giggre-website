@@ -28,18 +28,22 @@ export const HOST_GIG_COLLECTIONS: Record<GigTypeKey, string> = {
   offered: "offered_gigs",
 };
 
-// Gig-level statuses the "Open — awaiting applicants" stat tile (My Gigs
-// list, host dashboard) counts as still needing/having open slots — a
-// filled open_gig has its slots staffed but hasn't necessarily started or
-// finished the actual work yet, so it stays in this bucket too.
-export const OPEN_CARD_STATUSES = new Set(["open", "filled"]);
-
 // Terminal gig-level statuses — anything else counts as "active" for
 // dashboard purposes (still open, in progress, or awaiting payment).
 const TERMINAL_GIG_STATUSES = new Set(["completed", "cancelled", "declined", "no_worker"]);
 
 export function isActiveGigStatus(status: string): boolean {
   return !TERMINAL_GIG_STATUSES.has(status);
+}
+
+// The "Open — awaiting applicants" stat tile (My Gigs list, host dashboard)
+// — any open_gig that isn't finished or cancelled yet, regardless of
+// staffing state: zero applicants so far, fully staffed but not started,
+// or already in progress with some worker slots filled and others still
+// open. Scoped to gigType "open" specifically (not quick/offered gigs),
+// since the staffing concept this card describes only applies there.
+export function isOpenAwaitingGig(gig: Pick<HostGig, "gigType" | "status">): boolean {
+  return gig.gigType === "open" && isActiveGigStatus(gig.status);
 }
 
 function toLatLng(geo: GeoPoint | undefined): { lat: number; lng: number } | null {

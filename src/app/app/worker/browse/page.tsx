@@ -203,8 +203,13 @@ const Browse = () => {
     }, [uid]);
 
     useEffect(() => {
+        // Firestore's `skills` collection requires an authenticated read
+        // (isAuth() in the rules) — without this gate, the request can fire
+        // before the client's auth token is attached yet, right after a
+        // fresh page load, and fail with "Missing or insufficient permissions."
+        if (!uid) return;
         fetchSkillNames().then(setAllSkillNames).catch(() => {});
-    }, []);
+    }, [uid]);
 
     useEffect(() => {
         if (!viewingHostId) return;
