@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import LiveSupportBubble from "@/components/LiveSupportBubble";
 import NewMessageToaster from "@/components/NewMessageToaster";
 import PostLoginModals from "@/components/PostLoginModals";
 import { SiteHeader } from "@/components/site-header";
@@ -30,6 +31,7 @@ export default async function WorkerLayout({ children }: { children: React.React
     >
       <AppSidebar user={user} navItems={sidebarItems} sharedItems={sharedItems} role="worker" />
       <NewMessageToaster />
+      <LiveSupportBubble role="worker" />
       <PostLoginModals role="worker" />
       <SidebarInset>
         <SiteHeader title={`Hello ${user.name}!`} notifications role="worker" />

@@ -70,6 +70,8 @@ export interface WalletRecipient {
   name: string;
   code: string;
   photoUrl: string;
+  /** The recipient's own wallet currency, for a converted Send preview. */
+  currencyCode: string;
 }
 
 export async function lookupWalletRecipient(query: string): Promise<WalletRecipient> {
@@ -77,7 +79,7 @@ export async function lookupWalletRecipient(query: string): Promise<WalletRecipi
   return result.data;
 }
 
-export type WalletRequestType = "deposit" | "transfer";
+export type WalletRequestType = "deposit" | "transfer" | "withdraw";
 
 export type CreateWalletRequestInput =
   | {
@@ -85,7 +87,9 @@ export type CreateWalletRequestInput =
       amount: number;
       clientRequestId: string;
       method: string;
+      methodKind: "ewallet" | "office" | "remittance";
       reference: string;
+      proofPath?: string;
       proofUrl?: string;
       note?: string;
     }
@@ -94,6 +98,16 @@ export type CreateWalletRequestInput =
       amount: number;
       clientRequestId: string;
       recipientId: string;
+      note?: string;
+    }
+  | {
+      type: "withdraw";
+      amount: number;
+      clientRequestId: string;
+      method: string;
+      methodKind: "ewallet" | "office" | "remittance";
+      payoutName?: string;
+      payoutNumber?: string;
       note?: string;
     };
 
@@ -153,5 +167,24 @@ export interface ReferralTreeResult {
 
 export async function getMyReferralTree(): Promise<ReferralTreeResult> {
   const result = await callable<undefined, ReferralTreeResult>("getMyReferralTree")(undefined);
+  return result.data;
+}
+
+// ---------- Direct chat (user search) ----------
+// Mirrors giggre_app's user_search_service.dart. Any dm_* chat room other
+// than a host messaging a favorite worker (the one client-side path
+// firestore.rules still allows) MUST be created through this callable —
+// it's the only way a room between two people who haven't met yet starts as
+// a message request instead of an open chat, and the only path that checks
+// blocking, the "let others find me" opt-out, and the daily request quota.
+
+export interface StartDirectChatResult {
+  roomId: string;
+  requestStatus: "pending" | "accepted" | "declined";
+  peerName: string;
+}
+
+export async function startDirectChat(peerUid: string): Promise<StartDirectChatResult> {
+  const result = await callable<{ peerUid: string }, StartDirectChatResult>("startDirectChat")({ peerUid });
   return result.data;
 }

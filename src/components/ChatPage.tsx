@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   Ban,
+  BadgeCheck,
   Check,
   CheckCheck,
   File as FileIcon,
   Flag,
+  Inbox,
   Loader2,
   MapPin,
   MessageCircle,
@@ -18,6 +21,7 @@ import {
   Search,
   Send,
   Trash2,
+  X,
   Zap,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -43,16 +47,23 @@ import { blockUser, subscribeBlockedUserIds } from "@/lib/browse-gigs";
 import { CONTENT_REJECTION_MESSAGE, containsBlockedContent } from "@/lib/content-filter";
 import { unblockUser } from "@/lib/blocked-users";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
+import { startDirectChat } from "@/lib/firebase-functions";
+import { subscribeLiveSupportConfig } from "@/lib/live-support";
+import { searchUsers, type UserSearchResult } from "@/lib/user-search";
 import {
   attachmentTypeForFile,
   ATTACHMENT_MAX_BYTES,
+  canSendInRoom,
   deleteMessage,
   directMessageRoomId,
   fetchChatPeer,
   fetchOlderMessages,
+  hiddenFromInbox,
+  isRequestToMe,
   markRoomMessagesSeen,
   otherParticipant,
   OLDER_MESSAGES_PAGE_SIZE,
+  respondToMessageRequest,
   sendAttachmentMessage,
   sendDirectMessage,
   sendLocationMessage,
@@ -96,8 +107,50 @@ function timeLabel(date: Date | null) {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function calendarDiffDays(date: Date): number {
+  const now = new Date();
+  const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  return Math.round((startOfDay(now) - startOfDay(date)) / 86_400_000);
+}
+
+// Mirrors _formatTime in home_chat.dart — the conversation list always shows
+// a clock time, prefixed by how far back the day is (bare time today,
+// "Yesterday", a 3-letter weekday within the last week, else "Mon D").
+function conversationTimeLabel(date: Date | null) {
+  if (!date) return "";
+  const time = timeLabel(date);
+  const diffDays = calendarDiffDays(date);
+  if (diffDays <= 0) return time;
+  if (diffDays === 1) return `Yesterday ${time}`;
+  if (diffDays < 7) return `${date.toLocaleDateString("en-US", { weekday: "short" })} ${time}`;
+  return `${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })} ${time}`;
+}
+
+// Mirrors _formatDay in chat.dart — the label shown on the date divider
+// above the first message of each calendar day in a thread.
+function dayDividerLabel(date: Date | null): string {
+  if (!date) return "";
+  const diffDays = calendarDiffDays(date);
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isSameDay(a: Date | null, b: Date | null): boolean {
+  if (!a || !b) return false;
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
 function initials(name: string) {
   return name.trim().slice(0, 2).toUpperCase() || "?";
+}
+
+// Mirrors _ResultTile's _ratingLine getter in user_search_screen.dart.
+function userSearchRatingLine(result: UserSearchResult): string | null {
+  const parts: string[] = [];
+  if (result.workerRating != null) parts.push(`★ ${result.workerRating.toFixed(1)} as Gig Worker`);
+  if (result.hostRating != null) parts.push(`★ ${result.hostRating.toFixed(1)} as Gig Host`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function ChatRoomRow({
@@ -131,13 +184,13 @@ function ChatRoomRow({
       )}
     >
       <Avatar className="size-10 shrink-0">
-        <AvatarImage src={peer?.photoUrl || undefined} alt={peer?.name ?? ""} />
+        {peer?.photoUrl && <AvatarImage src={peer.photoUrl} alt={peer.name} />}
         <AvatarFallback>{initials(peer?.name ?? "?")}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
           <p className="truncate text-sm font-medium text-ink">{peer?.name ?? "…"}</p>
-          <span className="shrink-0 text-[11px] text-muted">{timeLabel(room.lastMessageAt)}</span>
+          <span className="shrink-0 text-[11px] text-muted">{conversationTimeLabel(room.lastMessageAt)}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className={`truncate text-xs ${unread ? "font-semibold text-ink" : "text-muted"}`}>
@@ -198,6 +251,20 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   const [newChatQuery, setNewChatQuery] = useState("");
   const [favoriteWorkers, setFavoriteWorkers] = useState<WorkerLookupResult[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState(false);
+  // "Find anyone on Giggre by name" (user_search_screen.dart) — a second,
+  // debounced result set shown alongside the favorites list once the query
+  // is 2+ characters, same minimum as the app's UserSearchService.normalize.
+  const [searchResults, setSearchResults] = useState<UserSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [startingChatUid, setStartingChatUid] = useState<string | null>(null);
+  // Toggles the sidebar between the normal room list and pending/declined
+  // requests addressed to me (message_requests.dart) — a banner above the
+  // list switches into this mode instead of a separate route, since this
+  // page already keeps everything in one view.
+  const [requestsView, setRequestsView] = useState(false);
+  // Chats with the live-support account (live-support.ts) have no call,
+  // block or report actions — mirrors chat.dart's isLiveSupportAccount.
+  const [supportUid, setSupportUid] = useState<string | null>(null);
 
   const [myBlockedIds, setMyBlockedIds] = useState<Set<string>>(new Set());
   const [peerBlockedIds, setPeerBlockedIds] = useState<Set<string>>(new Set());
@@ -236,6 +303,19 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   // rules (they get() the parent room doc to check participants), so
   // messages/mark-seen must wait until the room actually exists.
   const roomExists = activeRoomId ? rooms.some((r) => r.id === activeRoomId) : false;
+  const activeRoom = useMemo(() => rooms.find((r) => r.id === activeRoomId) ?? null, [rooms, activeRoomId]);
+  // Message-request gating for the open thread (chat.dart's _requestBar /
+  // _requestSentNote) — mirrors firestore.rules' requestAllowsMessage.
+  const iAmRequestRecipient = !!activeRoom && !!myUid && activeRoom.requestTo === myUid;
+  const requestPending = activeRoom?.requestStatus === "pending";
+  const requestDeclined = activeRoom?.requestStatus === "declined";
+  const showRequestBar = iAmRequestRecipient && (requestPending || requestDeclined);
+  const askerBlockedByDecline = !!activeRoom && !iAmRequestRecipient && requestDeclined;
+  const askerRequestPending = !!activeRoom && !iAmRequestRecipient && requestPending;
+  const requestComposerDisabled = !!myUid && !!activeRoom && !canSendInRoom(activeRoom, myUid);
+
+  const mainRooms = useMemo(() => (myUid ? rooms.filter((r) => !hiddenFromInbox(r, myUid)) : rooms), [rooms, myUid]);
+  const requestRooms = useMemo(() => (myUid ? rooms.filter((r) => isRequestToMe(r, myUid)) : []), [rooms, myUid]);
 
   useEffect(() => {
     if (!myUid) return;
@@ -261,6 +341,14 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   useEffect(() => {
     if (!myUid) return;
     return subscribeBlockedUserIds(myUid, (ids) => setMyBlockedIds(new Set(ids)));
+  }, [myUid]);
+
+  useEffect(() => {
+    if (!myUid) return;
+    return subscribeLiveSupportConfig(
+      (config) => setSupportUid(config.supportUid),
+      (err) => console.error("Failed to load live support config:", err)
+    );
   }, [myUid]);
 
   // The peer side of the bidirectional block check — only needs to track
@@ -336,7 +424,7 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
       toast(
         <div className="flex items-center gap-2.5">
           <Avatar className="size-8 shrink-0">
-            <AvatarImage src={peer?.photoUrl || undefined} alt={peerName} />
+            {peer?.photoUrl && <AvatarImage src={peer.photoUrl} alt={peerName} />}
             <AvatarFallback>{initials(peerName)}</AvatarFallback>
           </Avatar>
           <div className="min-w-0">
@@ -478,15 +566,15 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   }
 
   const filteredRooms = useMemo(() => {
-    if (!myUid) return rooms;
+    if (!myUid) return mainRooms;
     const q = search.trim().toLowerCase();
-    if (!q) return rooms;
-    return rooms.filter((room) => {
+    if (!q) return mainRooms;
+    return mainRooms.filter((room) => {
       const otherUid = otherParticipant(room, myUid);
       const name = otherUid ? (peers.get(otherUid)?.name ?? "") : "";
       return name.toLowerCase().includes(q);
     });
-  }, [rooms, search, peers, myUid]);
+  }, [mainRooms, search, peers, myUid]);
 
   async function handleSelectRoom(room: ChatRoom) {
     if (!myUid) return;
@@ -527,6 +615,40 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
     return favoriteWorkers.filter((u) => u.name.toLowerCase().includes(q));
   }, [favoriteWorkers, newChatQuery]);
 
+  // Full user search (user_search_screen.dart) — runs alongside the
+  // favorites list once the query is 2+ characters, debounced the same
+  // 300ms as the app. Favorites already shown above don't need to repeat
+  // here, so they're excluded from the results.
+  useEffect(() => {
+    if (!newChatOpen || !myUid || newChatQuery.trim().length < 2) {
+      // Clearing stale results for a closed/too-short query, not reacting
+      // to searchResults itself.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setSearchResults([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      setSearching(true);
+      const favoriteIds = new Set(favoriteWorkers.map((f) => f.uid));
+      searchUsers(myUid, newChatQuery, favoriteIds)
+        .then((results) => {
+          if (!cancelled) setSearchResults(results);
+        })
+        .catch((err) => {
+          console.error("Failed to search users:", err);
+          if (!cancelled) setSearchResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [newChatOpen, myUid, newChatQuery, favoriteWorkers]);
+
   function handleStartChat(found: WorkerLookupResult) {
     const peer: ChatPeer = { uid: found.uid, name: found.name, photoUrl: found.photoUrl };
     setPeers((prev) => new Map(prev).set(peer.uid, peer));
@@ -536,12 +658,57 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
     setNewChatQuery("");
   }
 
+  // A search result (not already a favorite) can't be messaged by a
+  // client-side room write — firestore.rules only allows that for the
+  // favorite-worker path — so this goes through startDirectChat, which
+  // creates the room (as an open chat or a message request, server-decided)
+  // before the normal composer/send flow takes over.
+  async function handleStartSearchChat(result: UserSearchResult) {
+    if (!myUid || startingChatUid) return;
+    setStartingChatUid(result.uid);
+    try {
+      const { roomId, peerName } = await startDirectChat(result.uid);
+      const peer: ChatPeer = { uid: result.uid, name: peerName || result.name, photoUrl: result.photoUrl };
+      setPeers((prev) => new Map(prev).set(peer.uid, peer));
+      setActivePeer(peer);
+      setSelectedRoomId(roomId);
+      setNewChatOpen(false);
+      setNewChatQuery("");
+    } catch (err) {
+      console.error("Failed to start chat:", err);
+      const message = (err as { message?: string })?.message || "Couldn't start that conversation. Please try again.";
+      toast.error(message);
+    } finally {
+      setStartingChatUid(null);
+    }
+  }
+
+  async function handleSelectRequestRoom(room: ChatRoom) {
+    if (!myUid) return;
+    const otherUid = otherParticipant(room, myUid);
+    if (!otherUid) return;
+    const cached = peers.get(otherUid);
+    setActivePeer(cached ?? (await fetchChatPeer(otherUid)));
+    setSelectedRoomId(room.id);
+    setRequestsView(false);
+  }
+
+  async function handleRespondToRequest(accept: boolean) {
+    if (!activeRoomId) return;
+    try {
+      await respondToMessageRequest(activeRoomId, accept);
+    } catch (err) {
+      console.error("Failed to respond to message request:", err);
+      toast.error("Couldn't do that. Please try again.");
+    }
+  }
+
   // `quickReply` bypasses the composer entirely (used by the quick-reply
   // chips below) — the composer's own draft text is left alone either way,
   // so tapping a chip never clobbers something the user was mid-typing.
   async function handleSend(quickReply?: string) {
     const text = (quickReply ?? messageText).trim();
-    if (!text || !myUid || !activePeer || !activeRoomId) return;
+    if (!text || !myUid || !activePeer || !activeRoomId || requestComposerDisabled) return;
     // Mirrors chat.dart's _sendMessage: checked before clearing the composer,
     // so a blocked message stays in the input for the user to revise.
     if (await containsBlockedContent(text)) {
@@ -733,55 +900,144 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
       </div>
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-hairline">
         <div className="flex min-h-0 w-full max-w-xs shrink-0 flex-col border-r border-hairline">
-          <div className="flex items-center gap-2 border-b border-hairline p-3">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="pl-8" />
+          {requestsView ? (
+            <div className="flex items-center gap-2 border-b border-hairline p-3">
+              <Button variant="ghost" size="icon-sm" aria-label="Back to chats" onClick={() => setRequestsView(false)}>
+                <ArrowLeft className="size-4" />
+              </Button>
+              <p className="flex-1 text-sm font-semibold text-ink">Message requests</p>
             </div>
-            <Popover open={newChatOpen} onOpenChange={setNewChatOpen}>
-              <PopoverTrigger render={<Button variant="outline" size="icon-sm" aria-label="New chat" />}>
-                <Plus className="size-4" />
-              </PopoverTrigger>
-              <PopoverContent align="end" className="w-72">
-                <div className="space-y-2 p-2">
-                  <p className="text-xs font-medium text-muted">Start a conversation</p>
-                  <Input
-                    autoFocus
-                    value={newChatQuery}
-                    onChange={(e) => setNewChatQuery(e.target.value)}
-                    placeholder="Filter favorites…"
-                  />
-                  <div className="max-h-56 space-y-0.5 overflow-y-auto">
-                    {loadingFavorites ? (
-                      <p className="p-2 text-center text-xs text-muted">Loading favorites…</p>
-                    ) : newChatResults.length === 0 ? (
-                      <p className="p-2 text-center text-xs text-muted">
-                        {newChatQuery.trim() ? "No favorites match that name." : "No favorites yet."}
-                      </p>
-                    ) : (
-                      newChatResults.map((user) => (
-                        <button
-                          key={user.uid}
-                          type="button"
-                          onClick={() => handleStartChat(user)}
-                          className="flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm hover:bg-accent"
-                        >
-                          <Avatar className="size-7 shrink-0">
-                            <AvatarImage src={user.photoUrl || undefined} alt={user.name} />
-                            <AvatarFallback>{initials(user.name)}</AvatarFallback>
-                          </Avatar>
-                          <span className="truncate">{user.name}</span>
-                        </button>
-                      ))
-                    )}
+          ) : (
+            <div className="flex items-center gap-2 border-b border-hairline p-3">
+              <div className="relative flex-1">
+                <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="pl-8" />
+              </div>
+              <Popover open={newChatOpen} onOpenChange={setNewChatOpen}>
+                <PopoverTrigger render={<Button variant="outline" size="icon-sm" aria-label="New chat" />}>
+                  <Plus className="size-4" />
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72">
+                  <div className="space-y-2 p-2">
+                    <p className="text-xs font-medium text-muted">Start a conversation</p>
+                    <Input
+                      autoFocus
+                      value={newChatQuery}
+                      onChange={(e) => setNewChatQuery(e.target.value)}
+                      placeholder="Search people…"
+                    />
+                    <div className="max-h-80 space-y-0.5 overflow-y-auto">
+                      {loadingFavorites ? (
+                        <p className="p-2 text-center text-xs text-muted">Loading favorites…</p>
+                      ) : (
+                        <>
+                          {newChatResults.length > 0 && (
+                            <>
+                              {newChatQuery.trim() && (
+                                <p className="px-1.5 pt-1 text-[10px] font-medium tracking-wide text-muted uppercase">Favorites</p>
+                              )}
+                              {newChatResults.map((user) => (
+                                <button
+                                  key={user.uid}
+                                  type="button"
+                                  onClick={() => handleStartChat(user)}
+                                  className="flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm hover:bg-accent"
+                                >
+                                  <Avatar className="size-7 shrink-0">
+                                    {user.photoUrl && <AvatarImage src={user.photoUrl} alt={user.name} />}
+                                    <AvatarFallback>{initials(user.name)}</AvatarFallback>
+                                  </Avatar>
+                                  <span className="truncate">{user.name}</span>
+                                </button>
+                              ))}
+                            </>
+                          )}
+                          {newChatQuery.trim().length >= 2 && (
+                            <>
+                              <p className="px-1.5 pt-2 text-[10px] font-medium tracking-wide text-muted uppercase">People on Giggre</p>
+                              {searching ? (
+                                <p className="p-2 text-center text-xs text-muted">Searching…</p>
+                              ) : searchResults.length === 0 ? (
+                                <p className="p-2 text-center text-xs text-muted">
+                                  No one named &quot;{newChatQuery.trim()}&quot;. Check the spelling or try their first name.
+                                </p>
+                              ) : (
+                                searchResults.map((result) => (
+                                  <button
+                                    key={result.uid}
+                                    type="button"
+                                    disabled={startingChatUid === result.uid}
+                                    onClick={() => handleStartSearchChat(result)}
+                                    className="flex w-full items-center gap-2 rounded-md p-1.5 text-left text-sm hover:bg-accent disabled:opacity-60"
+                                  >
+                                    <Avatar className="size-7 shrink-0">
+                                      {result.photoUrl && <AvatarImage src={result.photoUrl} alt={result.name} />}
+                                      <AvatarFallback>{initials(result.name)}</AvatarFallback>
+                                    </Avatar>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="flex items-center gap-1">
+                                        <span className="truncate">{result.name}</span>
+                                        {result.isVerified && <BadgeCheck className="size-3 shrink-0 text-worker" />}
+                                      </span>
+                                      <span className="block truncate text-[11px] text-muted">
+                                        {userSearchRatingLine(result) ?? "No ratings yet"}
+                                      </span>
+                                    </span>
+                                    {startingChatUid === result.uid && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" />}
+                                  </button>
+                                ))
+                              )}
+                            </>
+                          )}
+                          {newChatResults.length === 0 && newChatQuery.trim().length < 2 && (
+                            <p className="p-2 text-center text-xs text-muted">No favorites yet. Type a name to find anyone on Giggre.</p>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </PopoverContent>
-            </Popover>
-          </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          )}
+
+          {!requestsView && requestRooms.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setRequestsView(true)}
+              className="flex items-center gap-2.5 border-b border-hairline bg-worker-tint px-3 py-2.5 text-left transition-colors hover:bg-worker-tint/70"
+            >
+              <Inbox className="size-4 shrink-0 text-(--worker-text)" />
+              <span className="flex-1 text-xs font-semibold text-(--worker-text)">
+                {requestRooms.length === 1 ? "1 message request" : `${requestRooms.length} message requests`}
+              </span>
+            </button>
+          )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {loading ? (
+            {requestsView ? (
+              requestRooms.length === 0 ? (
+                <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+                  <Inbox className="size-8 text-muted" />
+                  <p className="text-sm font-medium text-ink">No message requests</p>
+                  <p className="text-xs text-muted">When someone you haven&apos;t worked with messages you, it shows up here first.</p>
+                </div>
+              ) : (
+                requestRooms.map((room) => {
+                  const otherUid = myUid ? otherParticipant(room, myUid) : null;
+                  return (
+                    <ChatRoomRow
+                      key={room.id}
+                      room={room}
+                      myUid={myUid ?? ""}
+                      peer={otherUid ? peers.get(otherUid) : undefined}
+                      active={activeRoomId === room.id}
+                      onSelect={() => handleSelectRequestRoom(room)}
+                    />
+                  );
+                })
+              )
+            ) : loading ? (
               <div className="space-y-2 p-3">
                 <Skeleton className="h-12 w-full" />
                 <Skeleton className="h-12 w-full" />
@@ -825,25 +1081,27 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
             <>
               <div className="flex items-center gap-3 border-b border-hairline p-3">
                 <Avatar className="size-9">
-                  <AvatarImage src={activePeer.photoUrl || undefined} alt={activePeer.name} />
+                  {activePeer.photoUrl && <AvatarImage src={activePeer.photoUrl} alt={activePeer.name} />}
                   <AvatarFallback>{initials(activePeer.name)}</AvatarFallback>
                 </Avatar>
                 <p className="flex-1 text-sm font-semibold text-ink">{activePeer.name}</p>
-                <DropdownMenu>
-                  <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Conversation actions" />}>
-                    <MoreVertical className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setReportOpen(true)}>
-                      <Flag className="size-3.5 text-orange-500" />
-                      Report user
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setBlockDialogOpen(true)}>
-                      <Ban className="size-3.5 text-red-500" />
-                      {isBlocked ? "Unblock user" : "Block user"}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {activePeer.uid !== supportUid && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Conversation actions" />}>
+                      <MoreVertical className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => setReportOpen(true)}>
+                        <Flag className="size-3.5 text-orange-500" />
+                        Report user
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => setBlockDialogOpen(true)}>
+                        <Ban className="size-3.5 text-red-500" />
+                        {isBlocked ? "Unblock user" : "Block user"}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </div>
 
               <div
@@ -862,16 +1120,25 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                         <Loader2 className="size-4 animate-spin text-muted" />
                       </div>
                     )}
-                    {messages.map((message) => {
+                    {messages.map((message, index) => {
                       const mine = message.senderId === myUid;
                       const avatarName = mine ? myName : activePeer.name;
                       const avatarPhotoUrl = mine ? profile?.photoUrl : activePeer.photoUrl;
                       const canDelete = mine && !message.isDeleted && withinDeleteWindow(message.createdAt);
+                      const showDateDivider = !isSameDay(messages[index - 1]?.createdAt ?? null, message.createdAt);
                       return (
-                        <Message key={message.id} align={mine ? "end" : "start"}>
+                        <Fragment key={message.id}>
+                          {showDateDivider && (
+                            <div className="flex justify-center py-1">
+                              <span className="rounded-full bg-muted/15 px-3 py-1 text-[11px] font-medium text-muted-foreground">
+                                {dayDividerLabel(message.createdAt)}
+                              </span>
+                            </div>
+                          )}
+                          <Message align={mine ? "end" : "start"}>
                           <MessageAvatar>
                             <Avatar className="size-8">
-                              <AvatarImage src={avatarPhotoUrl || undefined} alt={avatarName} />
+                              {avatarPhotoUrl && <AvatarImage src={avatarPhotoUrl} alt={avatarName} />}
                               <AvatarFallback>{initials(avatarName)}</AvatarFallback>
                             </Avatar>
                           </MessageAvatar>
@@ -958,7 +1225,8 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                               {mine && message.hasSeenByPeer && <CheckCheck className="size-3" aria-label="Seen" />}
                             </MessageFooter>
                           </MessageContent>
-                        </Message>
+                          </Message>
+                        </Fragment>
                       );
                     })}
                   </>
@@ -980,9 +1248,49 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                     <span>This user has blocked you.</span>
                   )}
                 </div>
+              ) : showRequestBar ? (
+                // chat.dart's _requestBar — replaces the composer entirely
+                // while a request addressed to me is pending or declined.
+                <div className="border-t border-hairline p-3">
+                  {requestPending ? (
+                    <>
+                      <p className="mb-2 text-sm text-ink">
+                        <span className="font-semibold">{activePeer.name}</span> wants to message you. Accept to reply, or decline.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button variant="outline" className="flex-1" onClick={() => handleRespondToRequest(false)}>
+                          <X className="size-4" />
+                          Decline
+                        </Button>
+                        <Button className="flex-1" onClick={() => handleRespondToRequest(true)}>
+                          <Check className="size-4" />
+                          Accept
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mb-2 text-sm text-muted">You declined this message request.</p>
+                      <Button className="w-full" onClick={() => handleRespondToRequest(true)}>
+                        <Check className="size-4" />
+                        Accept
+                      </Button>
+                    </>
+                  )}
+                </div>
+              ) : askerBlockedByDecline ? (
+                <div className="flex items-center gap-2 border-t border-hairline bg-muted/50 p-3 text-sm text-muted-foreground">
+                  <Ban className="size-4 shrink-0 text-red-400" />
+                  <span>{activePeer.name} isn&apos;t accepting messages from you.</span>
+                </div>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 border-t border-hairline p-3">
+                  {askerRequestPending && (
+                    <p className="border-t border-hairline bg-worker-tint/40 px-3 pt-2 pb-1 text-[11px] text-(--worker-text)">
+                      Message request sent. {activePeer.name} will see your messages once they accept.
+                    </p>
+                  )}
+                  <div className={cn("flex items-center gap-2 p-3", !askerRequestPending && "border-t border-hairline")}>
                     {role && (
                       <Popover open={quickRepliesOpen} onOpenChange={setQuickRepliesOpen}>
                         <PopoverTrigger render={<Button type="button" variant="outline" size="icon" aria-label="Quick messages" />}>

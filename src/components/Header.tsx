@@ -24,7 +24,7 @@ export default function Header() {
             priority
           />
           <span className="hidden border-l border-hairline pl-3 font-[var(--font-display)] text-sm font-semibold whitespace-nowrap text-ink md:block">
-            Need Help? Giggre it. Can Help? Giggre it.
+            Need Help? Giggre it. Want Help? Giggre it.
           </span>
         </Link>
         <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
 import { AppSidebar } from "@/components/app-sidebar";
+import LiveSupportBubble from "@/components/LiveSupportBubble";
 import NewMessageToaster from "@/components/NewMessageToaster";
 import PostLoginModals from "@/components/PostLoginModals";
 import { SiteHeader } from "@/components/site-header";
@@ -31,6 +32,7 @@ export default async function HostLayout({ children }: { children: React.ReactNo
     >
       <AppSidebar user={user} navItems={sidebarItems} sharedItems={sharedItems} role="host" />
       <NewMessageToaster />
+      <LiveSupportBubble role="host" />
       <PostLoginModals role="host" />
       <SidebarInset>
         <SiteHeader

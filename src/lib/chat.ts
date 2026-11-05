@@ -36,6 +36,8 @@ export function directMessageRoomId(uidA: string, uidB: string): string {
   return `dm_${[uidA, uidB].sort().join("_")}`;
 }
 
+export type ChatRequestStatus = "pending" | "accepted" | "declined";
+
 export interface ChatRoom {
   id: string;
   participants: string[];
@@ -48,6 +50,14 @@ export interface ChatRoom {
   gigId: string;
   isGigChat: boolean;
   status: string;
+  // Set only on a dm_* room created via startDirectChat (user search) for
+  // two people who hadn't met yet — see functions/src/directMessages.ts.
+  // Absent (undefined) on every other room, including the existing
+  // favorite-worker direct chats, which are always open.
+  isDirect: boolean;
+  requestStatus: ChatRequestStatus | null;
+  requestedBy: string | null;
+  requestTo: string | null;
 }
 
 function toChatRoom(id: string, data: Record<string, unknown>): ChatRoom {
@@ -63,7 +73,43 @@ function toChatRoom(id: string, data: Record<string, unknown>): ChatRoom {
     gigId: (data.gigId as string | undefined) ?? "",
     isGigChat: (data.isGigChat as boolean | undefined) ?? false,
     status: (data.status as string | undefined) ?? "open",
+    isDirect: (data.isDirect as boolean | undefined) ?? false,
+    requestStatus: (data.requestStatus as ChatRequestStatus | undefined) ?? null,
+    requestedBy: (data.requestedBy as string | undefined) ?? null,
+    requestTo: (data.requestTo as string | undefined) ?? null,
   };
+}
+
+// ── Message requests (direct chats started from user search) ───────────────
+// Mirrors giggre_app's lib/features/chat/message_requests.dart exactly.
+
+/** A request `uid` still has to answer, or has declined. */
+export function isRequestToMe(room: ChatRoom, uid: string): boolean {
+  return room.requestTo === uid && (room.requestStatus === "pending" || room.requestStatus === "declined");
+}
+
+/** A search chat opened but never written in — nothing to list yet. */
+export function isEmptyDirectChat(room: ChatRoom): boolean {
+  return room.isDirect && !room.lastMessageSenderId;
+}
+
+/** True when the room doesn't belong in `uid`'s main chat list. */
+export function hiddenFromInbox(room: ChatRoom, uid: string): boolean {
+  return isRequestToMe(room, uid) || isEmptyDirectChat(room);
+}
+
+// Mirrors firestore.rules' requestAllowsMessage(): while pending, only the
+// asker can write; once declined, neither can; accepted (or no request at
+// all, e.g. a favorite-worker chat) is always open.
+export function canSendInRoom(room: ChatRoom, uid: string): boolean {
+  if (room.requestStatus == null || room.requestStatus === "accepted") return true;
+  return room.requestStatus === "pending" && room.requestedBy === uid;
+}
+
+// Client-side write — firestore.rules lets only the request's recipient flip
+// pending/declined → accepted/declined (see chat.dart's _respondToRequest).
+export async function respondToMessageRequest(roomId: string, accept: boolean): Promise<void> {
+  await updateDoc(doc(db, "chat_rooms", roomId), { requestStatus: accept ? "accepted" : "declined" });
 }
 
 // No orderBy here on purpose — matches home_chat.dart's _GigChatsTab, which
