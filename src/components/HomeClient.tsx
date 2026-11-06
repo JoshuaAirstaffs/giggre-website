@@ -6,6 +6,7 @@ import Header from "./Header";
 import Hero from "./Hero";
 import AppPreview from "./AppPreview";
 import HowItWorks from "./HowItWorks";
+import { TutorialVideosSection } from "./TutorialVideos";
 import LocalProof from "./LocalProof";
 import DownloadCTA from "./DownloadCTA";
 import Footer from "./Footer";
@@ -20,6 +21,7 @@ export default function HomeClient() {
         <Hero mode={mode} setMode={setMode} />
         <AppPreview mode={mode} />
         <HowItWorks mode={mode} />
+        <TutorialVideosSection />
         <LocalProof />
         <DownloadCTA />
       </main>

@@ -52,7 +52,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>
       <body className="min-h-full flex flex-col">
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* Sets the saved light/dark theme before the page paints. next/script
+            (beforeInteractive) instead of a raw <script>: React 19 warns about
+            script tags rendered inside components. */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
         <Script id="sw-cleanup" strategy="afterInteractive">
           {swCleanupScript}
         </Script>
