@@ -297,15 +297,21 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
     const timeout = setTimeout(() => controller.abort(), 10_000);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeout);
-    if (!res.ok) return { address: null, countryCode: null };
+    // Mirrors post_quick_gig_screen.dart's _geocodePosition: every outcome
+    // (success, bad status, thrown error) sets a fresh address rather than
+    // leaving the previous pin's address on screen — returning `null` here
+    // let setLocation's `address ? { address } : {}` silently keep whatever
+    // text was already there when a request failed, so dragging the pin
+    // somewhere new could leave the old location's address showing.
+    if (!res.ok) return { address: "Selected location", countryCode: null };
     const data = await res.json();
     const countryCode = data?.address?.country_code as string | undefined;
     return {
-      address: (data?.display_name as string | undefined) ?? null,
+      address: (data?.display_name as string | undefined) || "Selected location",
       countryCode: countryCode ? countryCode.toUpperCase() : null,
     };
   } catch {
-    return { address: null, countryCode: null };
+    return { address: "Could not get address", countryCode: null };
   }
 }
 

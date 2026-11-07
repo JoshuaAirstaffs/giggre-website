@@ -168,9 +168,9 @@ export default function QuickGigForm() {
       (data?.filledSlotCount as number | undefined) ?? 0
     );
     if (status && QUICK_GIG_SUCCESS_STATUSES.includes(status)) {
-      toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right" });
+      toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right", duration: 6000 });
     } else {
-      toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right" });
+      toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right", duration: 6000 });
     }
   }
 
@@ -200,6 +200,7 @@ export default function QuickGigForm() {
       toast.error(`Still searching for ${label} after 5 minutes — check back later.`, {
         id: toastId,
         position: "bottom-right",
+        duration: 6000,
       });
       stopWatchingSearch();
       clearWatchedGigId();
@@ -221,9 +222,9 @@ export default function QuickGigForm() {
         return;
       }
       if (status && QUICK_GIG_SUCCESS_STATUSES.includes(status)) {
-        toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right" });
+        toast.success(`A worker was found for ${label}! (${slots})`, { id: toastId, position: "bottom-right", duration: 6000 });
       } else {
-        toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right" });
+        toast.error(`No worker was available for ${label}. (${slots})`, { id: toastId, position: "bottom-right", duration: 6000 });
       }
       clearWatchedGigId();
       stopWatchingSearch();
