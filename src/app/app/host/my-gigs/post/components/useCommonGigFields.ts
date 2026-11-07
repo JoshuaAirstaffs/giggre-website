@@ -105,7 +105,7 @@ export function useCommonGigFields() {
     const requestId = ++geocodeRequestId.current;
     reverseGeocode(location.lat, location.lng).then(({ address, countryCode }) => {
       if (requestId !== geocodeRequestId.current) return;
-      setFields((f) => ({ ...f, countryCode, ...(address ? { address } : {}) }));
+      setFields((f) => ({ ...f, countryCode, address: address ?? f.address }));
     });
   }
 
