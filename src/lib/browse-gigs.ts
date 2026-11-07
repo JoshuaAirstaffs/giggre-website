@@ -126,9 +126,15 @@ export async function fetchHostIsVerified(uid: string): Promise<boolean> {
 // Also reused for chat (both directions: mine, and the peer's) since it's
 // just "watch whose blockedUsers this uid's doc has," not host-specific.
 export function subscribeBlockedUserIds(uid: string, onData: (ids: string[]) => void): Unsubscribe {
-  return onSnapshot(doc(db, "users", uid), (snap) => {
-    onData((snap.data()?.blockedUsers as string[] | undefined) ?? []);
-  });
+  return onSnapshot(
+    doc(db, "users", uid),
+    (snap) => {
+      onData((snap.data()?.blockedUsers as string[] | undefined) ?? []);
+    },
+    // e.g. signed out mid-session — keep the last list instead of an
+    // uncaught listener error.
+    (err) => console.warn("[browse-gigs] blocked users listener:", err.code ?? err),
+  );
 }
 
 // Mirrors _blockUser in user_profile_sheet.dart — writes only to the acting

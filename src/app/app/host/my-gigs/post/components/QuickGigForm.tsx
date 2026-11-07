@@ -1,5 +1,6 @@
 "use client";
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Timestamp, doc, getDoc, onSnapshot } from "firebase/firestore";
@@ -11,6 +12,7 @@ import { consumePostAgainPrefill } from "@/lib/post-again";
 import { startAutoSearch } from "@/lib/quick-gig-matching";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
+import { TaskTypeSelect } from "./TaskTypeSelect";
 
 // Statuses quick_gig_matching_service.dart can still be actively working
 // through — the gig may bounce back to "scanning" more than once (e.g. a
@@ -79,8 +81,13 @@ export default function QuickGigForm() {
     resolveWorkDuration,
     currencyCode,
   } = useCommonGigFields();
+  // Unverified earning limit (same check as the app before posting).
+  const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [submitting, setSubmitting] = useState(false);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
+  // GSIN task type — the picker only shows once the admin has set up task types.
+  const [taskTypeId, setTaskTypeId] = useState("");
+  const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const unsubscribeSearchRef = useRef<(() => void) | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -220,16 +227,18 @@ export default function QuickGigForm() {
       }
       clearWatchedGigId();
       stopWatchingSearch();
-    });
+    }, (err) => console.warn("[QuickGigForm] search listener:", err.code ?? err));
   }
 
   async function handleSubmit() {
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
+    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
 
+    if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
       const gigId = await postQuickGig({
@@ -244,6 +253,7 @@ export default function QuickGigForm() {
         address: fields.address.trim(),
         scheduledDate: getScheduledDate(),
         workerSlots: Number(fields.workerSlots),
+        taskTypeId: taskTypeId || undefined,
       });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
@@ -257,6 +267,7 @@ export default function QuickGigForm() {
       );
       watchQuickGigSearch(gigId, fields.title.trim(), Number(fields.workerSlots));
       reset();
+      setTaskTypeId("");
     } catch (err) {
       console.error("Failed to post quick gig:", err);
       toast.error("Couldn't post the gig. Please try again.");
@@ -267,11 +278,15 @@ export default function QuickGigForm() {
 
   return (
     <div className="space-y-4">
+      {limitDialog}
       <p className="text-sm text-muted">
         Quick gigs are dispatched automatically to nearby available workers — no need to review applicants.
       </p>
       <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
-        <CommonGigDetails fields={fields} setField={setField} currencyCode={currencyCode} />
+        <div className="space-y-4">
+          <CommonGigDetails fields={fields} setField={setField} currencyCode={currencyCode} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} onAvailable={setHasTaskTypes} />
+        </div>
         <CommonGigSchedule
           fields={fields}
           setField={setField}

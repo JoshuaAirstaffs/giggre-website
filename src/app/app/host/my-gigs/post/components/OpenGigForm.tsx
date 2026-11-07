@@ -1,5 +1,7 @@
 "use client";
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
+import { TaskTypeSelect } from "./TaskTypeSelect";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -34,8 +36,13 @@ export default function OpenGigForm() {
     resolveWorkDuration,
     currencyCode,
   } = useCommonGigFields();
+  // Unverified earning limit (same check as the app before posting).
+  const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [skills, setSkills] = useState<string[]>([]);
   const [requiredSkill, setRequiredSkill] = useState("");
+  // GSIN task type — shown once the admin has set up task types, then required.
+  const [taskTypeId, setTaskTypeId] = useState("");
+  const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
   const [submitting, setSubmitting] = useState(false);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
@@ -79,9 +86,11 @@ export default function OpenGigForm() {
     const error = validateCommon();
     if (error) return toast.error(error);
     if (!requiredSkill) return toast.error("Please select a required skill.");
+    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
 
+    if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
       const gigId = await postOpenGig({
@@ -98,11 +107,13 @@ export default function OpenGigForm() {
         workerSlots: Number(fields.workerSlots),
         requiredSkill,
         experienceLevel,
+        taskTypeId: taskTypeId || undefined,
       });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
       setRequiredSkill("");
+      setTaskTypeId("");
       setExperienceLevel("entry");
     } catch (err) {
       console.error("Failed to post open gig:", err);
@@ -114,6 +125,7 @@ export default function OpenGigForm() {
 
   return (
     <div className="space-y-4">
+      {limitDialog}
       <p className="text-sm text-muted">
         Open gigs are visible to every nearby worker with the right skill — you choose who to accept from the applicants.
       </p>
@@ -138,6 +150,8 @@ export default function OpenGigForm() {
               </SelectContent>
             </Select>
           </div>
+
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} />
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>

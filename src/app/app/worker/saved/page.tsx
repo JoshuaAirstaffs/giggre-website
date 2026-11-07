@@ -1,5 +1,6 @@
 "use client";
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Bookmark, Briefcase, Calendar, FileText, Hourglass, MapIcon, Send, Tag, Users, Wallet } from "lucide-react";
@@ -107,6 +108,8 @@ export default function SavedGigsPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  // Unverified earning limit (same check as the app before apply / accept).
+  const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
@@ -223,6 +226,7 @@ export default function SavedGigsPage() {
     setPendingActionId(gig.id);
     try {
       if (!(await passPreflightChecks(gig))) return;
+      if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "apply" }))) return;
       const result = await applyToOpenGig(gig.id, uid, workerName);
       if (result.ok) toast.success("Application submitted! Waiting for host selection.");
       else toast.warning(result.reason);
@@ -254,6 +258,7 @@ export default function SavedGigsPage() {
     setPendingActionId(gig.id);
     try {
       if (!(await passPreflightChecks(gig))) return;
+      if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "accept" }))) return;
       const result = await acceptOfferedGig(gig);
       if (result.ok) toast.success("Gig accepted!");
       else toast.warning(result.reason);
@@ -296,6 +301,7 @@ export default function SavedGigsPage() {
 
   return (
     <JoshDiv>
+      {limitDialog}
       <TitlePage title="Saved Gigs" description="Gigs you've bookmarked to come back to" />
 
       <div className="mt-6 space-y-3">

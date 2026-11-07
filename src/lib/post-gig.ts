@@ -41,6 +41,7 @@ export interface GigLocation {
 export type PayType = "flat" | "hourly";
 
 export interface CommonGigInput {
+  taskTypeId?: string; // GSIN task type (admin catalog)
   hostId: string;
   hostName: string;
   title: string;
@@ -86,6 +87,8 @@ function commonGigFields(input: CommonGigInput) {
     ...(input.workDurationHours !== undefined ? { workDurationHours: input.workDurationHours } : {}),
     filledSlotCount: 0,
     slotsCompleted: 0,
+    // GSIN task type → a Cloud Function adds the gig's GSINS/GSKU codes.
+    ...(input.taskTypeId ? { taskTypeId: input.taskTypeId } : {}),
   };
 }
 

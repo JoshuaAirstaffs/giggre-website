@@ -1,5 +1,6 @@
 'use client'
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -142,6 +143,8 @@ const Browse = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+    // Unverified earning limit (same check as the app before apply / accept).
+    const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
 
     const [skillFilter, setSkillFilter] = useState<SkillFilter>("mySkills");
     const [specificSkill, setSpecificSkill] = useState<string | null>(null);
@@ -348,6 +351,7 @@ const Browse = () => {
         setPendingActionId(gig.id);
         try {
             if (!(await passPreflightChecks(gig))) return;
+            if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "apply" }))) return;
             const result = await applyToOpenGig(gig.id, uid, workerName);
             if (result.ok) toast.success("Application submitted! Waiting for host selection.");
             else toast.warning(result.reason);
@@ -379,6 +383,7 @@ const Browse = () => {
         setPendingActionId(gig.id);
         try {
             if (!(await passPreflightChecks(gig))) return;
+            if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "accept" }))) return;
             const result = await acceptOfferedGig(gig);
             if (result.ok) toast.success("Gig accepted!");
             else toast.warning(result.reason);
@@ -469,6 +474,7 @@ const Browse = () => {
 
     return (
         <>
+        {limitDialog}
         <div className="flex h-[calc(100dvh-var(--header-height))] flex-col overflow-hidden p-4">
             <div className="grid min-h-0 flex-1 grid-cols-5 gap-4">
                 <div className="col-span-3 flex min-h-0 flex-col">

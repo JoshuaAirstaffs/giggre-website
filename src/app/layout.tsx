@@ -77,7 +77,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* Saved light/dark theme before first paint. next/script instead of a
+            raw <script>: React 19 warns about script tags in components. */}
+        <Script id="theme-init" strategy="beforeInteractive">
+          {themeInitScript}
+        </Script>
         <Script id="sw-cleanup" strategy="afterInteractive">
           {swCleanupScript}
         </Script>

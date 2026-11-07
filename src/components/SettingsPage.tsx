@@ -3,20 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  Ban,
-  CheckCircle2,
-  CircleX,
-  Hourglass,
-  LockKeyhole,
-  MinusCircle,
-  Radar,
-  Repeat,
-  SettingsIcon,
-  ShieldOff,
-  Timer,
-  Trash2,
-} from "lucide-react";
+import { Ban, CheckCircle2, CircleX, Hourglass, LockKeyhole, MinusCircle, PlayCircle, Radar, Repeat, SettingsIcon, ShieldOff, Timer, Trash2 } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Button } from "@/components/ui/button";
@@ -281,6 +268,24 @@ export default function SettingsPage() {
             <GigMatchingConfigCard config={matchingConfig} />
           </>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Video tutorials</CardTitle>
+            <CardDescription>Short how-to videos — sign up, find work, post gigs, Gig Wallet and more.</CardDescription>
+            <CardAction>
+              <Button
+                variant="outline"
+                size="sm"
+                render={<Link href={`${basePath}/tutorials`} />}
+                nativeButton={false}
+              >
+                <PlayCircle className="size-3.5" />
+                Watch
+              </Button>
+            </CardAction>
+          </CardHeader>
+        </Card>
 
         <Card>
           <CardHeader>

@@ -23,6 +23,7 @@ export default function Footer() {
           </p>
           <ul className="mt-3 space-y-2 text-sm text-muted">
             <li><a href="#how-it-works" className="hover:text-ink">How it works</a></li>
+            <li><a href="/tutorials" className="hover:text-ink">Video tutorials</a></li>
             <li><a href="#local" className="hover:text-ink">Why hyperlocal</a></li>
             <li><a href="#download" className="hover:text-ink">Download</a></li>
           </ul>
