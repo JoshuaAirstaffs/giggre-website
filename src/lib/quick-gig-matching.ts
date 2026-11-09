@@ -14,6 +14,7 @@ import {
   updateDoc,
   where,
 } from "firebase/firestore";
+import { quickGigRadiusKm } from "@/lib/distance-units";
 import { db } from "@/lib/firebase";
 import type { GigLocation } from "@/lib/post-gig";
 import type { RatingAggregate } from "@/lib/ratings";
@@ -29,7 +30,6 @@ import type { RatingAggregate } from "@/lib/ratings";
 const DEFAULT_REVIEW_WINDOW_MS = 30_000;
 const DEFAULT_SEARCH_TIMEOUT_MS = 5 * 60_000;
 const DEFAULT_MAX_DISPATCH_ATTEMPTS = 10;
-const DEFAULT_MAX_SEARCH_RADIUS_KM = 10;
 
 const RETRY_INTERVAL_MS = 15_000;
 const POLL_INTERVAL_MS = 3_000;
@@ -38,7 +38,12 @@ interface MatchingConfig {
   reviewWindowMs: number;
   searchTimeoutMs: number;
   maxAttempts: number;
-  maxSearchRadiusKm: number;
+  raw: Record<string, unknown>; // radius is per region — see quickGigRadiusKm
+}
+
+// Per-region radius: US gigs (USD) use the admin's miles value.
+function radiusFor(config: MatchingConfig, gig: Record<string, unknown>): number | null {
+  return quickGigRadiusKm(config.raw, String(gig.currencyCode ?? "").toUpperCase() === "USD");
 }
 
 function delay(ms: number): Promise<void> {
@@ -55,14 +60,14 @@ async function fetchConfig(): Promise<MatchingConfig> {
       reviewWindowMs: ((data.review_window_seconds as number | undefined) ?? 30) * 1000,
       searchTimeoutMs: ((data.search_timeout_minutes as number | undefined) ?? 5) * 60_000,
       maxAttempts: (data.max_dispatch_attempts as number | undefined) ?? DEFAULT_MAX_DISPATCH_ATTEMPTS,
-      maxSearchRadiusKm: (data.max_search_radius_km as number | undefined) ?? DEFAULT_MAX_SEARCH_RADIUS_KM,
+      raw: data,
     };
   } catch {
     return {
       reviewWindowMs: DEFAULT_REVIEW_WINDOW_MS,
       searchTimeoutMs: DEFAULT_SEARCH_TIMEOUT_MS,
       maxAttempts: DEFAULT_MAX_DISPATCH_ATTEMPTS,
-      maxSearchRadiusKm: DEFAULT_MAX_SEARCH_RADIUS_KM,
+      raw: {},
     };
   }
 }
@@ -108,6 +113,7 @@ export interface MatchingDisplayConfig {
   allowReassignment: boolean | undefined;
   maxDispatchAttempts: number | undefined;
   maxSearchRadiusKm: number | undefined;
+  radiusConfig: Record<string, unknown>; // for quickGigRadiusLabel (per-region radius)
   reviewWindowSeconds: number | undefined;
   searchTimeoutMinutes: number | undefined;
 }
@@ -125,6 +131,7 @@ export async function fetchMatchingDisplayConfig(): Promise<MatchingDisplayConfi
       allowReassignment: data?.allow_reassignment_after_exhaustion as boolean | undefined,
       maxDispatchAttempts: data?.max_dispatch_attempts as number | undefined,
       maxSearchRadiusKm: data?.max_search_radius_km as number | undefined,
+      radiusConfig: data ?? {},
       reviewWindowSeconds: data?.review_window_seconds as number | undefined,
       searchTimeoutMinutes: data?.search_timeout_minutes as number | undefined,
     };
@@ -133,6 +140,7 @@ export async function fetchMatchingDisplayConfig(): Promise<MatchingDisplayConfi
       allowReassignment: undefined,
       maxDispatchAttempts: undefined,
       maxSearchRadiusKm: undefined,
+      radiusConfig: {},
       reviewWindowSeconds: undefined,
       searchTimeoutMinutes: undefined,
     };
@@ -174,7 +182,7 @@ interface WorkerCandidate {
 async function findBestWorker(
   gigLocation: GigLocation,
   exclude: string[],
-  maxSearchRadiusKm: number
+  maxSearchRadiusKm: number | null // null = no limit
 ): Promise<WorkerCandidate | null> {
   const snap = await getDocs(
     query(
@@ -197,7 +205,7 @@ async function findBestWorker(
     if (!geo) continue;
 
     const dist = distanceKm(gigLocation, { lat: geo.latitude, lng: geo.longitude });
-    if (dist > maxSearchRadiusKm) continue;
+    if (maxSearchRadiusKm != null && dist > maxSearchRadiusKm) continue;
 
     const acceptanceRate = (data.acceptanceRate as number | undefined) ?? 1.0;
     // `shrunk` (Bayesian-shrunk toward the prior mean) is the aggregate's
@@ -331,7 +339,7 @@ async function runSingleSlotSearch(
       const hostId = (gigData.hostId as string | undefined) ?? "";
       const excluded = [...((gigData.exclusionList as string[] | undefined) ?? []), ...(hostId ? [hostId] : [])];
 
-      const worker = await findBestWorker(gigLocation, excluded, config.maxSearchRadiusKm);
+      const worker = await findBestWorker(gigLocation, excluded, radiusFor(config, gigData));
       if (!worker) {
         await delay(RETRY_INTERVAL_MS);
         continue;
@@ -451,7 +459,7 @@ async function runMultiSlotSearch(
       }
 
       const excluded = [...((gigData.exclusionList as string[] | undefined) ?? []), ...(hostId ? [hostId] : [])];
-      const worker = await findBestWorker(gigLocation, excluded, config.maxSearchRadiusKm);
+      const worker = await findBestWorker(gigLocation, excluded, radiusFor(config, gigData));
 
       if (!worker) {
         await delay(RETRY_INTERVAL_MS);
@@ -582,7 +590,7 @@ async function runBackfillSlotSearch(
       const hostId = (gigData.hostId as string | undefined) ?? "";
       const excluded = [...((gigData.exclusionList as string[] | undefined) ?? []), ...(hostId ? [hostId] : [])];
 
-      const worker = await findBestWorker(gigLocation, excluded, config.maxSearchRadiusKm);
+      const worker = await findBestWorker(gigLocation, excluded, radiusFor(config, gigData));
       if (!worker) {
         await delay(RETRY_INTERVAL_MS);
         continue;

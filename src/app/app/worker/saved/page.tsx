@@ -15,6 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import {
@@ -111,6 +112,7 @@ export default function SavedGigsPage() {
   // Unverified earning limit (same check as the app before apply / accept).
   const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const units = useDistanceUnits();
 
   useEffect(() => {
     if (!uid) return;
@@ -213,7 +215,7 @@ export default function SavedGigsPage() {
       const distKm = haversineKm(myLocation, gig.location);
       if (distKm >= FAR_GIG_THRESHOLD_KM) {
         const proceed = window.confirm(
-          `This gig is about ${Math.round(distKm)} km from your current location. Make sure you're able to travel there before you take it. Continue?`
+          `This gig is about ${units.formatKm(distKm)} from your current location. Make sure you're able to travel there before you take it. Continue?`
         );
         if (!proceed) return false;
       }

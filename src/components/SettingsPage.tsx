@@ -1,5 +1,7 @@
 "use client";
 
+import { quickGigRadiusLabel } from "@/lib/distance-units";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -186,6 +188,7 @@ function DeclineSuspensionConfigCard({ config }: { config: DeclineSuspensionConf
 
 // Mirrors _ConfigCard("Gig Matching") in worker_settings_screen.dart.
 function GigMatchingConfigCard({ config }: { config: MatchingDisplayConfig | null }) {
+  const units = useDistanceUnits();
   return (
     <Card>
       <CardHeader>
@@ -212,8 +215,8 @@ function GigMatchingConfigCard({ config }: { config: MatchingDisplayConfig | nul
               iconClassName="text-blue-500"
             />
             <ConfigRow
-              label="Max Search Radius (km)"
-              value={config.maxSearchRadiusKm != null ? String(config.maxSearchRadiusKm) : "Unlimited"}
+              label="Max Search Radius"
+              value={quickGigRadiusLabel(config.radiusConfig, units.miles)}
               icon={Radar}
               iconClassName="text-teal-500"
             />

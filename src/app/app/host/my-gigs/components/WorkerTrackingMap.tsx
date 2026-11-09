@@ -1,5 +1,6 @@
 "use client";
 
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { loadGoogleMapsLibrary, loadGoogleMarkerLibrary } from "@/lib/google-maps";
@@ -140,9 +141,6 @@ function formatEta(seconds: number) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function formatDistance(meters: number) {
-  return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
-}
 
 // One map, showing exactly one worker at a time — a chip row above the map
 // (only shown when there's more than one currently-navigating worker) picks
@@ -152,6 +150,7 @@ function formatDistance(meters: number) {
 // in that status.
 export default function WorkerTrackingMap({ workers, destination }: WorkerTrackingMapProps) {
   const [selectedId, setSelectedId] = useState<string | null>(() => workers[0]?.workerId ?? null);
+  const units = useDistanceUnits(); // miles (US) or km
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const destMarkerRef = useRef<google.maps.Marker | null>(null);
@@ -365,7 +364,7 @@ export default function WorkerTrackingMap({ workers, destination }: WorkerTracki
 
       {routeInfo && selectedWorker && (
         <p className="text-xs text-muted">
-          {selectedWorker.workerName}: {formatEta(routeInfo.etaSeconds)} away · {formatDistance(routeInfo.distanceMeters)}
+          {selectedWorker.workerName}: {formatEta(routeInfo.etaSeconds)} away · {units.format(routeInfo.distanceMeters)}
         </p>
       )}
     </div>

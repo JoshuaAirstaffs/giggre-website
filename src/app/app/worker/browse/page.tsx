@@ -28,6 +28,7 @@ import {
     Loader2,
     Mail,
     MapIcon,
+    Navigation,
     Search,
     Send,
     Star,
@@ -38,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
@@ -68,7 +70,8 @@ import {
 
 type SkillFilter = "all" | "mySkills" | "specific";
 const FAR_GIG_THRESHOLD_KM = 50;
-const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100];
+const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100]; // in the shown unit (mi / km)
+const NEAREST_FALLBACK_COUNT = 10;
 
 // Either "report this host" (from the host profile drawer) or "report this
 // gig posting" (from the gig detail panel) — same reason list/dialog for
@@ -149,7 +152,11 @@ const Browse = () => {
     const [skillFilter, setSkillFilter] = useState<SkillFilter>("mySkills");
     const [specificSkill, setSpecificSkill] = useState<string | null>(null);
     const [allSkillNames, setAllSkillNames] = useState<string[]>([]);
-    const [radiusKm, setRadiusKm] = useState<number | null>(10);
+    // Distance filter in the shown unit (miles for US, km otherwise — see
+    // useDistanceUnits); compared in km. Default: 10 of the shown unit.
+    const units = useDistanceUnits();
+    const [radius, setRadius] = useState<number | null>(10);
+    const radiusKm = radius == null ? null : units.toKm(radius);
     const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
 
     const [viewingHostId, setViewingHostId] = useState<string | null>(null);
@@ -265,9 +272,18 @@ const Browse = () => {
         );
     }, [allGigs, skillFilter, specificSkill, workerSkills]);
 
-    const radiusFiltered = useMemo(() => {
-        if (radiusKm == null || !myLocation) return skillFiltered;
-        return skillFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
+    // Nothing inside the distance → fall back to the nearest gigs beyond it
+    // (same as the app), so the worker always sees what's closest.
+    const { radiusFiltered, nearestFallbackKm } = useMemo(() => {
+        if (radiusKm == null || !myLocation) return { radiusFiltered: skillFiltered, nearestFallbackKm: null };
+        const inside = skillFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
+        const located = skillFiltered.filter((g) => g.location);
+        if (inside.length > 0 || located.length === 0) return { radiusFiltered: inside, nearestFallbackKm: null };
+        const nearest = located
+            .map((g) => ({ g, d: haversineKm(myLocation, g.location!) }))
+            .sort((a, b) => a.d - b.d)
+            .slice(0, NEAREST_FALLBACK_COUNT);
+        return { radiusFiltered: nearest.map((x) => x.g), nearestFallbackKm: nearest[0].d };
     }, [skillFiltered, radiusKm, myLocation]);
 
     const filteredGigs = useMemo(() => {
@@ -338,7 +354,7 @@ const Browse = () => {
             const distKm = haversineKm(myLocation, gig.location);
             if (distKm >= FAR_GIG_THRESHOLD_KM) {
                 const proceed = window.confirm(
-                    `This gig is about ${Math.round(distKm)} km from your current location. Make sure you're able to travel there before you take it. Continue?`
+                    `This gig is about ${units.formatKm(distKm)} from your current location. Make sure you're able to travel there before you take it. Continue?`
                 );
                 if (!proceed) return false;
             }
@@ -525,16 +541,16 @@ const Browse = () => {
                         <div className="flex flex-col gap-1">
                             <Label className="text-xs text-muted">Radius</Label>
                             <Select
-                                value={radiusKm === null ? "none" : String(radiusKm)}
-                                onValueChange={(v) => setRadiusKm(v === "none" || v === null ? null : Number(v))}
+                                value={radius === null ? "none" : String(radius)}
+                                onValueChange={(v) => setRadius(v === "none" || v === null ? null : Number(v))}
                             >
                                 <SelectTrigger size="sm">
-                                    <SelectValue>{radiusKm === null ? "No limit" : `${radiusKm} km`}</SelectValue>
+                                    <SelectValue>{radius === null ? "No limit" : `${radius} ${units.unit}`}</SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                     {RADIUS_OPTIONS.map((r) => (
                                         <SelectItem key={r ?? "none"} value={r === null ? "none" : String(r)}>
-                                            {r === null ? "No limit" : `${r} km`}
+                                            {r === null ? "No limit" : `${r} ${units.unit}`}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -557,6 +573,16 @@ const Browse = () => {
 
                         {!loading && error && (
                             <p className="rounded-lg border border-hairline bg-sidebar p-6 text-sm text-destructive">{error}</p>
+                        )}
+
+                        {!loading && !error && nearestFallbackKm != null && radius != null && (
+                            <div className="flex items-start gap-2 rounded-lg border border-amber-400/60 bg-amber-50 p-3 text-sm text-ink dark:bg-amber-500/10">
+                                <Navigation className="mt-0.5 size-4 shrink-0 text-amber-500" />
+                                <span>
+                                    No gigs within {radius} {units.unit}. Showing the nearest —{" "}
+                                    <b>{units.format(nearestFallbackKm * 1000)}</b> away.
+                                </span>
+                            </div>
                         )}
 
                         {!loading && !error && filteredGigs.length === 0 && (
@@ -596,7 +622,7 @@ const Browse = () => {
                                         <MapIcon className="size-3.5 shrink-0" />
                                         <span className="truncate">{gig.address}</span>
                                         {myLocation && gig.location && (
-                                            <span className="shrink-0">· {haversineKm(myLocation, gig.location).toFixed(1)} km</span>
+                                            <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
                                         )}
                                     </div>
                                     <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">

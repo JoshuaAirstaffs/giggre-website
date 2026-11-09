@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
-import { doc, onSnapshot } from "firebase/firestore";
 import {
   durationLabel, fetchTutorialVideos, forRegion, signedInPhilippines, thumbnailOf, visitorInPhilippines,
   type Placement, type TutorialVideo,
 } from "@/lib/tutorial-videos";
 import { searchTutorialVideos } from "@/lib/tutorial-search";
 import { useAppSelector } from "@/store/hooks";
+import { useWalletCurrency } from "@/hooks/use-wallet-currency";
 
 // Website side of the app's tutorial videos (giggre-admin → Content
 // Management → Tutorial Videos). Same videos, same English / Tagalog choice,
@@ -19,31 +19,6 @@ import { useAppSelector } from "@/store/hooks";
 //   visitors   → browser time zone (Asia/Manila) or a PH / Filipino language
 //   otherwise  → English
 
-/** wallets/{uid}.currencyCode, live (null = no wallet / not signed in). */
-function useWalletCurrency(uid: string | undefined): string | null {
-  const [ccy, setCcy] = useState<{ uid: string; code: string | null } | null>(null);
-  useEffect(() => {
-    if (!uid) return;
-    let unsub: (() => void) | undefined;
-    let alive = true;
-    import("@/lib/firebase").then(({ db }) => {
-      if (!alive) return;
-      unsub = onSnapshot(
-        doc(db, "wallets", uid),
-        (snap) => {
-          const c = snap.data()?.currencyCode;
-          setCcy({ uid, code: typeof c === "string" && c ? c : null });
-        },
-        () => setCcy({ uid, code: null }),
-      );
-    }).catch(() => {});
-    return () => {
-      alive = false;
-      unsub?.();
-    };
-  }, [uid]);
-  return uid && ccy?.uid === uid ? ccy.code : null;
-}
 
 function useTutorialVideos() {
   const [videos, setVideos] = useState<TutorialVideo[] | null>(null);
