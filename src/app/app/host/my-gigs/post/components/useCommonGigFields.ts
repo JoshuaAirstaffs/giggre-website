@@ -118,17 +118,43 @@ export function useCommonGigFields() {
       return;
     }
     setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setLocating(false);
-      },
-      () => {
-        toast.error("Couldn't get your location. Please allow location access and try again.");
-        setLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10_000 }
-    );
+
+    function attempt(isRetry: boolean) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setLocating(false);
+        },
+        (err) => {
+          console.error("Geolocation error:", err);
+          // POSITION_UNAVAILABLE (macOS CoreLocation's kCLErrorLocationUnknown
+          // is a common cause) is well-documented as usually transient —
+          // worth one immediate retry before bothering the worker with it.
+          if (!isRetry && err.code === err.POSITION_UNAVAILABLE) {
+            attempt(true);
+            return;
+          }
+          // A permission grant that already happened still surfaced as this
+          // same generic message, since every error code (including a plain
+          // TIMEOUT — common on laptops without GPS under enableHighAccuracy)
+          // showed the same "allow location access" copy regardless of cause.
+          const message =
+            err.code === err.PERMISSION_DENIED
+              ? "Location permission denied. Please allow location access in your browser settings and try again."
+              : err.code === err.TIMEOUT
+                ? "Couldn't get your location in time. Please try again."
+                : "Couldn't get your location. Please try again.";
+          toast.error(message);
+          setLocating(false);
+        },
+        // Mirrors post_quick_gig_screen.dart's 15-second timeLimit (longer
+        // than the previous 10s) and accepts a position cached up to a
+        // minute ago (maximumAge), similar to the app trying
+        // getLastKnownPosition before falling back to a fresh GPS fix.
+        { enableHighAccuracy: true, timeout: 15_000, maximumAge: 60_000 }
+      );
+    }
+    attempt(false);
   }
 
   function reset() {

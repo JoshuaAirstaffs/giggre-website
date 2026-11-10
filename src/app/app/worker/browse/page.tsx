@@ -855,9 +855,9 @@ const Browse = () => {
                         ))}
                     </div>
                 </div>
-                <div className="col-span-2 col-start-4 h-full">
+                <div className="col-span-2 col-start-4 min-h-0 h-full">
                     {selectedGig ? (
-                        <div className="flex h-full flex-col overflow-y-auto rounded-lg border border-hairline bg-sidebar p-6 shadow-sm">
+                        <div className="flex h-full min-h-0 flex-col overflow-y-auto rounded-lg border border-hairline bg-sidebar p-6 shadow-sm">
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-start gap-4">
                                     <AvatarHost hostname={selectedGig.hostName} />
