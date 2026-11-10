@@ -188,3 +188,25 @@ export async function startDirectChat(peerUid: string): Promise<StartDirectChatR
   const result = await callable<{ peerUid: string }, StartDirectChatResult>("startDirectChat")({ peerUid });
   return result.data;
 }
+
+// ---------- Pre-sign-in lookups ----------
+// users/{uid} is readable only by signed-in users (giggre_app firestore.rules),
+// so checks made before the account exists go through these callables
+// (giggre_app functions/src/publicLookups.ts). They return the minimum —
+// never the referrer's email or other profile data.
+
+export interface ReferralCodeLookup {
+  found: boolean;
+  userId?: string;
+  name?: string;
+}
+
+export async function lookupReferralCode(code: string): Promise<ReferralCodeLookup> {
+  const result = await callable<{ code: string }, ReferralCodeLookup>("lookupReferralCode")({ code });
+  return result.data;
+}
+
+export async function checkAccountExists(email: string): Promise<boolean> {
+  const result = await callable<{ email: string }, { exists: boolean }>("checkAccountExists")({ email });
+  return result.data.exists === true;
+}

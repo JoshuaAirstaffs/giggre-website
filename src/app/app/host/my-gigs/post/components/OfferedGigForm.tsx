@@ -1,5 +1,7 @@
 "use client";
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
+import { TaskTypeSelect } from "./TaskTypeSelect";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Check, ChevronsUpDown, Star, Users, UserSearch, X } from "lucide-react";
@@ -55,8 +57,13 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     resolveWorkDuration,
     currencyCode,
   } = useCommonGigFields();
+  // Unverified earning limit (same check as the app before posting).
+  const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [skills, setSkills] = useState<string[]>([]);
   const [skillRequired, setSkillRequired] = useState("");
+  // GSIN task type — shown once the admin has set up task types, then required.
+  const [taskTypeId, setTaskTypeId] = useState("");
+  const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
   // Arriving via the Favorites page's "Quick Offer" button — the parent page
   // keys this component by the resolved worker's uid (see post/page.tsx), so
@@ -167,12 +174,14 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     const error = validateCommon();
     if (error) return toast.error(error);
     if (!skillRequired) return toast.error("Please select a required skill.");
+    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     if (selectedWorkers.length === 0) {
       return toast.error("Please select at least one worker to offer this gig to.");
     }
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
 
+    if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, selectedWorkers.length), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
       const gigId = await postOfferedGig({
@@ -189,12 +198,14 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         scheduledDate: getScheduledDate(),
         skillRequired,
         experienceLevel,
+        taskTypeId: taskTypeId || undefined,
         workers: selectedWorkers,
       });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
       setSkillRequired("");
+      setTaskTypeId("");
       setExperienceLevel("entry");
       setSelectedWorkers([]);
     } catch (err) {
@@ -318,6 +329,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
 
   return (
     <div className="space-y-4">
+      {limitDialog}
       <p className="text-sm text-muted">
         Offered gigs go directly to the worker(s) you choose — each one can accept or decline.
       </p>
@@ -353,6 +365,8 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
               </SelectContent>
             </Select>
           </div>
+
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} />
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>

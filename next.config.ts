@@ -3,6 +3,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["firebase-admin"],
+  // Dev only: hot reload for other devices on the local network
+  // (http://192.168.x.x:3000). No effect on production builds.
+  allowedDevOrigins: ["192.168.*.*"],
   // Pins the workspace root explicitly — without this, Turbopack's
   // auto-detection can walk up past this repo and pick an unrelated
   // lockfile/directory as the project root on some hosts (seen on

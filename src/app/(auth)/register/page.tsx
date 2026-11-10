@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import { TutorialVideosStrip } from "@/components/TutorialVideos";
 import RegisterForm from "@/components/RegisterForm";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default function RegisterPage() {
           <p className="mt-3 text-muted">Join Giggre to post gigs or start earning nearby.</p>
 
           <RegisterForm />
+          <TutorialVideosStrip placement="signup" title="How to register" />
         </div>
       </main>
       <Footer />

@@ -12,6 +12,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { lookupReferralCode } from "@/lib/firebase-functions";
 
 // Ported from giggre_app/lib/utils/user_utils.dart to keep the web
 // registration flow's validation and Firestore schema in sync with the app.
@@ -136,13 +137,18 @@ export interface ReferralLookup {
   email: string;
 }
 
+// Runs BEFORE the account exists (RegisterForm), when users/{uid} can't be
+// read — so it asks the server (lookupReferralCode callable), which returns
+// only the referrer's id and name. `email` stays for the type but is empty.
 export async function validateReferralCode(code: string): Promise<ReferralLookup | null> {
-  const usersRef = collection(db, "users");
-  const found = await getDocs(query(usersRef, where("referrals.referral_code", "==", code), limit(1)));
-  if (found.empty) return null;
-  const userDoc = found.docs[0];
-  const data = userDoc.data();
-  return { userId: userDoc.id, name: data.name ?? "User", email: data.email ?? "" };
+  try {
+    const r = await lookupReferralCode(code);
+    if (!r.found || !r.userId) return null;
+    return { userId: r.userId, name: r.name ?? "User", email: "" };
+  } catch (err) {
+    console.error("[registration] referral lookup failed", err);
+    return null;
+  }
 }
 
 // Mirrors giggre_app/lib/screens/referrals/my_referral_screen.dart's

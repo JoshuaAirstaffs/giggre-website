@@ -129,9 +129,15 @@ export async function fetchHostIsVerified(uid: string): Promise<boolean> {
 // Also reused for chat (both directions: mine, and the peer's) since it's
 // just "watch whose blockedUsers this uid's doc has," not host-specific.
 export function subscribeBlockedUserIds(uid: string, onData: (ids: string[]) => void): Unsubscribe {
-  return onSnapshot(doc(db, "users", uid), (snap) => {
-    onData((snap.data()?.blockedUsers as string[] | undefined) ?? []);
-  });
+  return onSnapshot(
+    doc(db, "users", uid),
+    (snap) => {
+      onData((snap.data()?.blockedUsers as string[] | undefined) ?? []);
+    },
+    // e.g. signed out mid-session — keep the last list instead of an
+    // uncaught listener error.
+    (err) => console.warn("[browse-gigs] blocked users listener:", err.code ?? err),
+  );
 }
 
 // Mirrors _blockUser in user_profile_sheet.dart — writes only to the acting
@@ -646,13 +652,6 @@ export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; l
   const s =
     Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
-}
-
-// Mirrors DistanceUnits.format in distance_units.dart (km-only — the app
-// also supports miles for non-PH regions, not replicated here).
-export function formatDistanceKm(km: number): string {
-  if (km < 1) return `${Math.round(km * 1000)} m`;
-  return `${km.toFixed(1)} km`;
 }
 
 // Reverse-geocodes via Nominatim to find a 2-letter country code. Only called

@@ -1,5 +1,6 @@
 'use client'
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,6 +39,7 @@ import {
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatPostedAge, formatSchedule, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
@@ -51,7 +53,6 @@ import {
     fetchGigFilters,
     fetchHostIsVerified,
     fetchSkillNames,
-    formatDistanceKm,
     gigMatchesPayType,
     gigMatchesScheduleDate,
     gigMatchesSearch,
@@ -76,7 +77,8 @@ import {
 
 type SkillFilter = "all" | "mySkills" | "specific";
 const FAR_GIG_THRESHOLD_KM = 50;
-const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100];
+const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100]; // in the shown unit (mi / km)
+const NEAREST_FALLBACK_COUNT = 10;
 // PAUSED (2026-11-09), same as the app: filters aren't saved to or loaded
 // from users/{uid}.gigFilters for now, so every visit starts on the dynamic
 // defaults. Existing saved data is left in place; set true to resume.
@@ -163,11 +165,18 @@ const Browse = () => {
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+    // Unverified earning limit (same check as the app before apply / accept).
+    const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
 
     const [skillFilter, setSkillFilter] = useState<SkillFilter>("all");
     const [specificSkill, setSpecificSkill] = useState<string | null>(null);
     const [allSkillNames, setAllSkillNames] = useState<string[]>([]);
-    const [radiusKm, setRadiusKm] = useState<number | null>(null);
+    // Distance filter in the shown unit (miles for US, km otherwise — see
+    // useDistanceUnits); compared in km. null until the dynamic-defaults
+    // effect below sets it (or the worker picks one).
+    const units = useDistanceUnits();
+    const [radius, setRadius] = useState<number | null>(null);
+    const radiusKm = radius == null ? null : units.toKm(radius);
     const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
     // yyyy-MM-dd, or null for "Any date"
     const [scheduleDate, setScheduleDate] = useState<string | null>(null);
@@ -203,8 +212,8 @@ const Browse = () => {
     const lastSavedFilters = useRef<string | null>(null);
     const hasSkills = workerSkills.length > 0;
 
-    // Smallest radius option that reaches the nearest gig needing one of
-    // the worker's skills (a gig 4 km away → 5 km); null = No limit.
+    // Smallest radius option (in the shown unit) that reaches the nearest
+    // gig needing one of the worker's skills; null = No limit.
     const nearestSkillGigRadius = useMemo(() => {
         if (!myLocation || !hasSkills) return null;
         let nearestKm: number | null = null;
@@ -215,9 +224,9 @@ const Browse = () => {
             if (nearestKm === null || km < nearestKm) nearestKm = km;
         }
         if (nearestKm === null) return null;
-        const km = nearestKm;
-        return RADIUS_OPTIONS.find((r) => r !== null && km <= r) ?? null;
-    }, [myLocation, hasSkills, openGigs, offeredGigs, blockedHostIds, workerSkills]);
+        const shown = units.fromKm(nearestKm);
+        return RADIUS_OPTIONS.find((r) => r !== null && shown <= r) ?? null;
+    }, [myLocation, hasSkills, openGigs, offeredGigs, blockedHostIds, workerSkills, units]);
 
     useEffect(() => {
         if (!usingDefaultFilters) return;
@@ -225,7 +234,7 @@ const Browse = () => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setSkillFilter(hasSkills ? "mySkills" : "all");
         setSpecificSkill(null);
-        setRadiusKm(nearestSkillGigRadius);
+        setRadius(nearestSkillGigRadius);
     }, [hasSkills, nearestSkillGigRadius, usingDefaultFilters]);
 
     // Wraps every filter control: the worker's own choice replaces the defaults
@@ -249,14 +258,15 @@ const Browse = () => {
                     const nextSkill = skill === "specific" && !specific ? "all" : skill;
                     setSkillFilter(nextSkill);
                     setSpecificSkill(specific);
-                    const nextRadius = saved.radiusSet ? (typeof saved.radiusKm === "number" ? saved.radiusKm : null) : null;
-                    setRadiusKm(nextRadius);
+                    const nextRadiusKm = saved.radiusSet ? (typeof saved.radiusKm === "number" ? saved.radiusKm : null) : null;
+                    const nextRadius = nextRadiusKm == null ? null : units.fromKm(nextRadiusKm);
+                    setRadius(nextRadius);
                     const nextSchedule =
                         typeof saved.scheduleDate === "string" && saved.scheduleDate >= todayLocalDateString() ? saved.scheduleDate : null;
                     setScheduleDate(nextSchedule);
                     const nextPayType = saved.payType === "hourly" || saved.payType === "flat" ? saved.payType : "all";
                     setPayTypeFilter(nextPayType);
-                    lastSavedFilters.current = JSON.stringify([nextSkill, specific, nextRadius, nextSchedule, nextPayType]);
+                    lastSavedFilters.current = JSON.stringify([nextSkill, specific, nextRadiusKm, nextSchedule, nextPayType]);
                 }
                 setFiltersLoaded(true);
             })
@@ -265,6 +275,9 @@ const Browse = () => {
                 if (!cancelled) setFiltersLoaded(true);
             });
         return () => { cancelled = true; };
+        // Runs once per uid — not re-run when `units` resolves later, same as
+        // every other load-once-on-mount effect in this file.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [uid]);
 
     useEffect(() => {
@@ -392,7 +405,6 @@ const Browse = () => {
     // so that when nothing is inside the worker's radius, it can fall back
     // to the nearest NEAREST_FALLBACK_COUNT gigs that match every other
     // filter, instead of showing an empty list.
-    const NEAREST_FALLBACK_COUNT = 10;
     const { radiusFiltered, nearestFallbackKm } = useMemo(() => {
         if (radiusKm == null || !myLocation) return { radiusFiltered: payTypeFiltered, nearestFallbackKm: null as number | null };
         const inside = payTypeFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
@@ -479,7 +491,7 @@ const Browse = () => {
             const distKm = haversineKm(myLocation, gig.location);
             if (distKm >= FAR_GIG_THRESHOLD_KM) {
                 const proceed = window.confirm(
-                    `This gig is about ${Math.round(distKm)} km from your current location. Make sure you're able to travel there before you take it. Continue?`
+                    `This gig is about ${units.formatKm(distKm)} from your current location. Make sure you're able to travel there before you take it. Continue?`
                 );
                 if (!proceed) return false;
             }
@@ -492,6 +504,7 @@ const Browse = () => {
         setPendingActionId(gig.id);
         try {
             if (!(await passPreflightChecks(gig))) return;
+            if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "apply" }))) return;
             const result = await applyToOpenGig(gig.id, uid, workerName);
             if (result.ok) toast.success("Application submitted! Waiting for host selection.");
             else toast.warning(result.reason);
@@ -523,6 +536,7 @@ const Browse = () => {
         setPendingActionId(gig.id);
         try {
             if (!(await passPreflightChecks(gig))) return;
+            if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "accept" }))) return;
             const result = await acceptOfferedGig(gig);
             if (result.ok) toast.success("Gig accepted!");
             else toast.warning(result.reason);
@@ -613,6 +627,7 @@ const Browse = () => {
 
     return (
         <>
+        {limitDialog}
         <div className="flex h-[calc(100dvh-var(--header-height))] flex-col overflow-hidden p-4">
             <div className="grid min-h-0 flex-1 grid-cols-5 gap-4">
                 <div className="col-span-3 flex min-h-0 flex-col">
@@ -663,16 +678,16 @@ const Browse = () => {
                         <div className="flex flex-col gap-1">
                             <Label className="text-xs text-muted">Radius</Label>
                             <Select
-                                value={radiusKm === null ? "none" : String(radiusKm)}
-                                onValueChange={(v) => changeFilters(() => setRadiusKm(v === "none" || v === null ? null : Number(v)))}
+                                value={radius === null ? "none" : String(radius)}
+                                onValueChange={(v) => changeFilters(() => setRadius(v === "none" || v === null ? null : Number(v)))}
                             >
                                 <SelectTrigger size="sm">
-                                    <SelectValue>{radiusKm === null ? "Any" : `${radiusKm} km`}</SelectValue>
+                                    <SelectValue>{radius === null ? "Any" : `${radius} ${units.unit}`}</SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                     {RADIUS_OPTIONS.map((r) => (
                                         <SelectItem key={r ?? "none"} value={r === null ? "none" : String(r)}>
-                                            {r === null ? "Any" : `${r} km`}
+                                            {r === null ? "Any" : `${r} ${units.unit}`}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
@@ -725,7 +740,7 @@ const Browse = () => {
                                 changeFilters(() => {
                                     setSkillFilter("all");
                                     setSpecificSkill(null);
-                                    setRadiusKm(null);
+                                    setRadius(null);
                                     setScheduleDate(null);
                                     setPayTypeFilter("all");
                                 })
@@ -755,9 +770,9 @@ const Browse = () => {
                             .
                         </p>
                     )}
-                    {!loading && !searching && nearestFallbackKm != null && radiusKm != null && (
+                    {!loading && !searching && nearestFallbackKm != null && radius != null && (
                         <p className="mt-2 rounded-lg border border-(--quick-start)/60 bg-sidebar px-3 py-2 text-xs text-muted">
-                            No gigs within {radiusKm} km. Showing the nearest — {formatDistanceKm(nearestFallbackKm)} away.
+                            No gigs within {radius} {units.unit}. Showing the nearest — {units.format(nearestFallbackKm * 1000)} away.
                         </p>
                     )}
 
@@ -814,7 +829,7 @@ const Browse = () => {
                                             <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
                                         )}
                                         {myLocation && gig.location && (
-                                            <span className="shrink-0">· {haversineKm(myLocation, gig.location).toFixed(1)} km</span>
+                                            <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
                                         )}
                                     </div>
                                     <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">

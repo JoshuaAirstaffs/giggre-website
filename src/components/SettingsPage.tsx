@@ -1,22 +1,11 @@
 "use client";
 
+import { quickGigRadiusLabel } from "@/lib/distance-units";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import {
-  Ban,
-  CheckCircle2,
-  CircleX,
-  Hourglass,
-  LockKeyhole,
-  MinusCircle,
-  Radar,
-  Repeat,
-  SettingsIcon,
-  ShieldOff,
-  Timer,
-  Trash2,
-} from "lucide-react";
+import { Ban, CheckCircle2, CircleX, Hourglass, LockKeyhole, MinusCircle, PlayCircle, Radar, Repeat, SettingsIcon, ShieldOff, Timer, Trash2 } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Button } from "@/components/ui/button";
@@ -199,6 +188,7 @@ function DeclineSuspensionConfigCard({ config }: { config: DeclineSuspensionConf
 
 // Mirrors _ConfigCard("Gig Matching") in worker_settings_screen.dart.
 function GigMatchingConfigCard({ config }: { config: MatchingDisplayConfig | null }) {
+  const units = useDistanceUnits();
   return (
     <Card>
       <CardHeader>
@@ -225,8 +215,8 @@ function GigMatchingConfigCard({ config }: { config: MatchingDisplayConfig | nul
               iconClassName="text-blue-500"
             />
             <ConfigRow
-              label="Max Search Radius (km)"
-              value={config.maxSearchRadiusKm != null ? String(config.maxSearchRadiusKm) : "Unlimited"}
+              label="Max Search Radius"
+              value={quickGigRadiusLabel(config.radiusConfig, units.miles)}
               icon={Radar}
               iconClassName="text-teal-500"
             />
@@ -281,6 +271,24 @@ export default function SettingsPage() {
             <GigMatchingConfigCard config={matchingConfig} />
           </>
         )}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Video tutorials</CardTitle>
+            <CardDescription>Short how-to videos — sign up, find work, post gigs, Gig Wallet and more.</CardDescription>
+            <CardAction>
+              <Button
+                variant="outline"
+                size="sm"
+                render={<Link href={`${basePath}/tutorials`} />}
+                nativeButton={false}
+              >
+                <PlayCircle className="size-3.5" />
+                Watch
+              </Button>
+            </CardAction>
+          </CardHeader>
+        </Card>
 
         <Card>
           <CardHeader>

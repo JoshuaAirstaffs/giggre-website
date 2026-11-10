@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import { TutorialVideosStrip } from "@/components/TutorialVideos";
 import LoginForm from "@/components/LoginForm";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default function LoginPage() {
           <p className="mt-3 text-muted">Log in with the same account you use on the app.</p>
 
           <LoginForm />
+          <TutorialVideosStrip placement="login" title="Need help logging in?" />
         </div>
       </main>
       <Footer />

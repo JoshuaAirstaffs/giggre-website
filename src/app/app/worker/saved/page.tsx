@@ -1,5 +1,6 @@
 "use client";
 
+import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Bookmark, Briefcase, Calendar, FileText, Hourglass, MapIcon, Send, Tag, Users, Wallet } from "lucide-react";
@@ -14,6 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
+import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import {
@@ -107,7 +109,10 @@ export default function SavedGigsPage() {
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  // Unverified earning limit (same check as the app before apply / accept).
+  const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const units = useDistanceUnits();
 
   useEffect(() => {
     if (!uid) return;
@@ -210,7 +215,7 @@ export default function SavedGigsPage() {
       const distKm = haversineKm(myLocation, gig.location);
       if (distKm >= FAR_GIG_THRESHOLD_KM) {
         const proceed = window.confirm(
-          `This gig is about ${Math.round(distKm)} km from your current location. Make sure you're able to travel there before you take it. Continue?`
+          `This gig is about ${units.formatKm(distKm)} from your current location. Make sure you're able to travel there before you take it. Continue?`
         );
         if (!proceed) return false;
       }
@@ -223,6 +228,7 @@ export default function SavedGigsPage() {
     setPendingActionId(gig.id);
     try {
       if (!(await passPreflightChecks(gig))) return;
+      if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "apply" }))) return;
       const result = await applyToOpenGig(gig.id, uid, workerName);
       if (result.ok) toast.success("Application submitted! Waiting for host selection.");
       else toast.warning(result.reason);
@@ -254,6 +260,7 @@ export default function SavedGigsPage() {
     setPendingActionId(gig.id);
     try {
       if (!(await passPreflightChecks(gig))) return;
+      if (!(await limitGuard({ amount: gig.budget, currencyCode: gig.currencyCode ?? "USD", action: "accept" }))) return;
       const result = await acceptOfferedGig(gig);
       if (result.ok) toast.success("Gig accepted!");
       else toast.warning(result.reason);
@@ -296,6 +303,7 @@ export default function SavedGigsPage() {
 
   return (
     <JoshDiv>
+      {limitDialog}
       <TitlePage title="Saved Gigs" description="Gigs you've bookmarked to come back to" />
 
       <div className="mt-6 space-y-3">

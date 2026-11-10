@@ -5,6 +5,7 @@ import { InfoIcon, TrendingDown, TrendingUp } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAppSelector } from "@/store/hooks";
+import { UnverifiedLimitProgress } from "@/components/UnverifiedLimit";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn, currencySymbol } from "@/lib/utils";
 import {
@@ -154,6 +155,9 @@ export default function EarningsSummaryCard({ entries, loading, currency }: Earn
             </div>
           )}
         </div>
+        {/* Unverified accounts: how much of the admin's earning limit is used
+            (hidden when verified or the limit is off) — like the app. */}
+        <UnverifiedLimitProgress currencyCode={currency || profile?.currencyCode || "USD"} />
       </CardContent>
     </Card>
   );
