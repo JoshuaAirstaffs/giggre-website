@@ -98,11 +98,14 @@ function MapCanvas({
   }, [location]);
 
   // Same search-with-suggestions experience as the host app's map picker
-  // (post_quick_gig_screen.dart's _fetchSuggestions/_selectSuggestion) —
-  // restricted to the Philippines there too. The app fetches suggestions
-  // from the Places Autocomplete REST API directly, which it notes is
-  // CORS-blocked on web; the JS Autocomplete widget used here is Google's
-  // browser-native equivalent of that same feature.
+  // (post_quick_gig_screen.dart's _fetchSuggestions/_selectSuggestion). The
+  // app fetches suggestions from the Places Autocomplete REST API directly,
+  // which it notes is CORS-blocked on web; the JS Autocomplete widget used
+  // here is Google's browser-native equivalent of that same feature.
+  // Restricted to PH and US — the two markets the app actually supports
+  // (see currencyCodeForCountry in post-gig.ts and useDistanceUnits) —
+  // unlike the app's own hardcoded `country:ph`, which blocks US hosts
+  // entirely from searching their own address.
   useEffect(() => {
     let cancelled = false;
     loadGooglePlaces()
@@ -110,7 +113,7 @@ function MapCanvas({
         if (cancelled || !searchInputRef.current) return;
         const autocomplete = new Autocomplete(searchInputRef.current, {
           fields: ["geometry", "formatted_address"],
-          componentRestrictions: { country: "ph" },
+          componentRestrictions: { country: ["ph", "us"] },
         });
         autocomplete.addListener("place_changed", () => {
           const place = autocomplete.getPlace();
