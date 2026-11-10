@@ -243,6 +243,7 @@ export default function QuickGigForm() {
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),
+        place: fields.place,
         scheduledDate: getScheduledDate(),
         workerSlots: Number(fields.workerSlots),
       });

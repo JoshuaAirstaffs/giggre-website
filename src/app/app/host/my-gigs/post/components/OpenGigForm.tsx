@@ -94,6 +94,7 @@ export default function OpenGigForm() {
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),
+        place: fields.place,
         scheduledDate: getScheduledDate(),
         workerSlots: Number(fields.workerSlots),
         requiredSkill,

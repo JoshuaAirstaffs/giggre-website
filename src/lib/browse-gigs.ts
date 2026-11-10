@@ -50,6 +50,9 @@ export interface Gig {
   hostName: string;
   hostId: string;
   address: string;
+  // Country, region, province, city, ZIP saved when the gig was posted
+  // (empty on older gigs). Used by the search box.
+  place: Record<string, string>;
   location: { lat: number; lng: number } | null;
   experienceLevel: string;
   requiredSkills: string[];
@@ -137,6 +140,90 @@ export async function blockUser(currentUid: string, targetUid: string): Promise<
   await updateDoc(doc(db, "users", currentUid), { blockedUsers: arrayUnion(targetUid) });
 }
 
+function placeOf(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object") return {};
+  const place: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === "string") place[k] = v;
+  }
+  return place;
+}
+
+// ── Search ─────────────────────────────────────────────────────────────────
+// Same rule as the app (gigMatchesSearch in gig_map_section.dart): every
+// word typed must start a word in the gig's title, host name, address or
+// place (country, region, province, city, ZIP), in any order — so
+// "makati 1226", "1226 makati" and "metro manila ph" all match.
+export function searchWords(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+export function gigMatchesSearch(gig: Gig, queryWords: string[]): boolean {
+  if (queryWords.length === 0) return true;
+  const words = searchWords([gig.title, gig.hostName, gig.address, ...Object.values(gig.place)].join(" "));
+  return queryWords.every((q) => words.some((w) => w.startsWith(q)));
+}
+
+// ── Saved filters ──────────────────────────────────────────────────────────
+// users/{uid}.gigFilters, shared with the app (gig_map_section.dart
+// _filtersToJson) — scheduleDate/payType use the exact same keys/values the
+// app reads and writes (_filtersToJson/_filtersFromJson in gig_map_section.dart)
+// so either client can load filters the other one saved. pinDisplay is a
+// map-view-only display toggle, not a data filter — not ported here.
+export type PayTypeFilter = "all" | "hourly" | "flat";
+
+export interface SavedGigFilters {
+  skill?: "all" | "mySkills" | "specific";
+  specificSkill?: string | null;
+  radiusKm?: number | null;
+  // true when radiusKm was saved, so a saved "No limit" (null) is kept
+  radiusSet?: boolean;
+  // yyyy-MM-dd, or absent/null for "Any date"
+  scheduleDate?: string | null;
+  payType?: PayTypeFilter;
+}
+
+export async function fetchGigFilters(uid: string): Promise<SavedGigFilters | null> {
+  const snap = await getDoc(doc(db, "users", uid));
+  const raw = snap.data()?.gigFilters;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as SavedGigFilters;
+}
+
+export async function saveGigFilters(uid: string, filters: Required<SavedGigFilters>): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    "gigFilters.skill": filters.skill,
+    "gigFilters.specificSkill": filters.specificSkill,
+    "gigFilters.radiusKm": filters.radiusKm,
+    "gigFilters.radiusSet": true,
+    "gigFilters.scheduleDate": filters.scheduleDate,
+    "gigFilters.payType": filters.payType,
+  });
+}
+
+// Matches gig_map_section.dart's schedule-date comparison exactly: a date
+// filter is set, and the gig has no scheduledDate at all, never matches
+// (treated as stale data, not "any date") — only year/month/day are
+// compared, the time of day is ignored.
+export function gigMatchesScheduleDate(gig: Gig, scheduleDate: string | null): boolean {
+  if (!scheduleDate) return true;
+  if (!gig.scheduledDate) return false;
+  const [y, m, d] = scheduleDate.split("-").map(Number);
+  return gig.scheduledDate.getFullYear() === y && gig.scheduledDate.getMonth() + 1 === m && gig.scheduledDate.getDate() === d;
+}
+
+// Matches gig_map_section.dart's payType filter exactly: "Day" (the `flat`
+// value) is anything NOT `hourly` — not a strict `=== "flat"` check — so a
+// legacy gig doc missing payType entirely still counts as "Day".
+export function gigMatchesPayType(gig: Gig, payType: PayTypeFilter): boolean {
+  if (payType === "all") return true;
+  if (payType === "hourly") return gig.payType === "hourly";
+  return gig.payType !== "hourly";
+}
+
 function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig {
   const geo = data.location as GeoPoint | undefined;
   const applicants = ((data.applicants as ApplicantEntry[] | undefined) ?? []).map((a) => ({
@@ -156,6 +243,7 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     hostName: (data.hostName as string) ?? "",
     hostId: (data.hostId as string) ?? "",
     address: (data.address as string) ?? "",
+    place: placeOf(data.place),
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     experienceLevel: (data.experienceLevel as string) ?? "",
     requiredSkills: (data.requiredSkills as string[] | undefined) ?? [],
@@ -558,6 +646,13 @@ export function haversineKm(a: { lat: number; lng: number }, b: { lat: number; l
   const s =
     Math.sin(dLat / 2) ** 2 + Math.cos((a.lat * Math.PI) / 180) * Math.cos((b.lat * Math.PI) / 180) * Math.sin(dLng / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(s), Math.sqrt(1 - s));
+}
+
+// Mirrors DistanceUnits.format in distance_units.dart (km-only — the app
+// also supports miles for non-PH regions, not replicated here).
+export function formatDistanceKm(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${km.toFixed(1)} km`;
 }
 
 // Reverse-geocodes via Nominatim to find a 2-letter country code. Only called

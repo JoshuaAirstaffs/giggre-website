@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { countryCodeFromCoordinates } from "@/lib/browse-gigs";
 import { CONTENT_REJECTION_MESSAGE, containsBlockedContent } from "@/lib/content-filter";
-import { currencyCodeForCountry, reverseGeocode, type GigLocation, type PayType } from "@/lib/post-gig";
+import { currencyCodeForCountry, reverseGeocode, type GigLocation, type GigPlace, type PayType } from "@/lib/post-gig";
 import { useAppSelector } from "@/store/hooks";
 
 export interface CommonGigFieldsState {
@@ -36,6 +36,8 @@ export interface CommonGigFieldsState {
   // Derived from `location` (see setLocation below) — drives both the
   // budget field's currency prefix and the cross-country check.
   countryCode: string | null;
+  // Searchable place parts of `location`, from the same reverse-geocode.
+  place: GigPlace | null;
 }
 
 const emptyCommonFields: CommonGigFieldsState = {
@@ -51,6 +53,7 @@ const emptyCommonFields: CommonGigFieldsState = {
   address: "",
   location: null,
   countryCode: null,
+  place: null,
 };
 
 export function useCommonGigFields() {
@@ -101,11 +104,11 @@ export function useCommonGigFields() {
   // (drag-to-pan and search) — sets the pin immediately, then fills in the
   // address text and currency-driving country code once reverse-geocoded.
   function setLocation(location: GigLocation) {
-    setFields((f) => ({ ...f, location }));
+    setFields((f) => ({ ...f, location, place: null }));
     const requestId = ++geocodeRequestId.current;
-    reverseGeocode(location.lat, location.lng).then(({ address, countryCode }) => {
+    reverseGeocode(location.lat, location.lng).then(({ address, countryCode, place }) => {
       if (requestId !== geocodeRequestId.current) return;
-      setFields((f) => ({ ...f, countryCode, address: address ?? f.address }));
+      setFields((f) => ({ ...f, countryCode, place, address: address ?? f.address }));
     });
   }
 

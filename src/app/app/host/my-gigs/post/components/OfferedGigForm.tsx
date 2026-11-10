@@ -185,6 +185,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         currencyCode,
         location: fields.location!,
         address: fields.address.trim(),
+        place: fields.place,
         scheduledDate: getScheduledDate(),
         skillRequired,
         experienceLevel,

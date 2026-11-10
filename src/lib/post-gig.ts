@@ -49,6 +49,9 @@ export interface CommonGigInput {
   currencyCode: string;
   location: GigLocation;
   address: string;
+  // Country, region, state/province, city, ZIP of the pin (see
+  // placeFromNominatim). Workers search by these; omitted when unknown.
+  place?: GigPlace | null;
   scheduledDate: Date | null;
   workerSlots: number;
   // `budget` (and ratePerSlot/rate below) is always the per-worker amount —
@@ -77,6 +80,7 @@ function commonGigFields(input: CommonGigInput) {
     currencyCode: input.currencyCode,
     location: new GeoPoint(input.location.lat, input.location.lng),
     address: input.address,
+    ...(input.place && Object.keys(input.place).length > 0 ? { place: input.place } : {}),
     createdAt: serverTimestamp(),
     ...(input.scheduledDate ? { scheduledDate: Timestamp.fromDate(input.scheduledDate) } : {}),
     workerSlots: input.workerSlots,
@@ -277,6 +281,39 @@ export async function fetchWorkerByUid(uid: string): Promise<WorkerLookupResult 
 export interface ReverseGeocodeResult {
   address: string | null;
   countryCode: string | null;
+  place: GigPlace | null;
+}
+
+// Where a gig is, in parts a worker can search by. Same keys giggre_app
+// saves (GigPlace in lib/core/utils/country_check.dart):
+// { country, countryCode, region, state, province, county, city, postcode }
+export type GigPlace = Record<string, string>;
+
+const PLACE_KEYS: Record<string, string[]> = {
+  country: ["country"],
+  region: ["region"],
+  state: ["state"],
+  province: ["province"],
+  county: ["county", "state_district"],
+  city: ["city", "town", "municipality", "village"],
+  postcode: ["postcode"],
+};
+
+export function placeFromNominatim(addr: Record<string, unknown> | undefined | null): GigPlace | null {
+  if (!addr) return null;
+  const place: GigPlace = {};
+  for (const [key, sources] of Object.entries(PLACE_KEYS)) {
+    for (const s of sources) {
+      const v = typeof addr[s] === "string" ? (addr[s] as string).trim() : "";
+      if (v) {
+        place[key] = v;
+        break;
+      }
+    }
+  }
+  const code = typeof addr.country_code === "string" ? addr.country_code.toUpperCase() : "";
+  if (code) place.countryCode = code;
+  return Object.keys(place).length > 0 ? place : null;
 }
 
 // Reverse-geocodes via Nominatim to prefill an editable address field and
@@ -289,6 +326,8 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
       lat: String(lat),
       lon: String(lng),
       format: "json",
+      addressdetails: "1",
+      "accept-language": "en",
     })}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000);
@@ -300,15 +339,16 @@ export async function reverseGeocode(lat: number, lng: number): Promise<ReverseG
     // let setLocation's `address ? { address } : {}` silently keep whatever
     // text was already there when a request failed, so dragging the pin
     // somewhere new could leave the old location's address showing.
-    if (!res.ok) return { address: "Selected location", countryCode: null };
+    if (!res.ok) return { address: "Selected location", countryCode: null, place: null };
     const data = await res.json();
     const countryCode = data?.address?.country_code as string | undefined;
     return {
       address: (data?.display_name as string | undefined) || "Selected location",
       countryCode: countryCode ? countryCode.toUpperCase() : null,
+      place: placeFromNominatim(data?.address),
     };
   } catch {
-    return { address: "Could not get address", countryCode: null };
+    return { address: "Could not get address", countryCode: null, place: null };
   }
 }
 

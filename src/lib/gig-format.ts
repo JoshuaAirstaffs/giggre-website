@@ -27,6 +27,14 @@ export function formatSchedule(date: Date | null) {
   });
 }
 
+// Same format as formatSchedule (e.g. "Thu, Nov 19, 8:53 AM"), but returns
+// null instead of a "—" placeholder for a gig with no scheduledDate — the
+// browse-list gig card omits the whole segment rather than showing a dash.
+export function formatScheduleShort(date: Date | null): string | null {
+  if (!date) return null;
+  return formatSchedule(date);
+}
+
 export function currencySymbol(currency?: string) {
   if (currency === "USD") return "$";
   return "₱";

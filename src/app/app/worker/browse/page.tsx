@@ -11,7 +11,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { cn, formatDate, maskEmail } from "@/lib/utils";
-import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
     BadgeCheck,
     Ban,
@@ -33,12 +33,13 @@ import {
     Tag,
     Users,
     Wallet,
+    X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
+import { capitalize, formatPostedAge, formatSchedule, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
@@ -47,8 +48,15 @@ import {
     countryCodeFromCoordinates,
     declineOfferedGig,
     fetchHostByUid,
+    fetchGigFilters,
     fetchHostIsVerified,
     fetchSkillNames,
+    formatDistanceKm,
+    gigMatchesPayType,
+    gigMatchesScheduleDate,
+    gigMatchesSearch,
+    saveGigFilters,
+    searchWords,
     haversineKm,
     subscribeBlockedUserIds,
     subscribeOfferedGigs,
@@ -60,6 +68,7 @@ import {
     workerHasPendingCancellation,
     type Gig,
     type HostLookupResult,
+    type PayTypeFilter,
 } from "@/lib/browse-gigs";
 
 // Mirrors giggre_app's gigs-near-you feed — see src/lib/browse-gigs.ts for the
@@ -68,6 +77,18 @@ import {
 type SkillFilter = "all" | "mySkills" | "specific";
 const FAR_GIG_THRESHOLD_KM = 50;
 const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100];
+// PAUSED (2026-11-09), same as the app: filters aren't saved to or loaded
+// from users/{uid}.gigFilters for now, so every visit starts on the dynamic
+// defaults. Existing saved data is left in place; set true to resume.
+const PERSIST_GIG_FILTERS = false;
+
+// A saved schedule-date filter that's already in the past would hide every
+// gig forever — gig_map_section.dart silently drops it back to "Any date"
+// on load for the same reason.
+function todayLocalDateString(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 // Either "report this host" (from the host profile drawer) or "report this
 // gig posting" (from the gig detail panel) — same reason list/dialog for
@@ -143,11 +164,14 @@ const Browse = () => {
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [pendingActionId, setPendingActionId] = useState<string | null>(null);
 
-    const [skillFilter, setSkillFilter] = useState<SkillFilter>("mySkills");
+    const [skillFilter, setSkillFilter] = useState<SkillFilter>("all");
     const [specificSkill, setSpecificSkill] = useState<string | null>(null);
     const [allSkillNames, setAllSkillNames] = useState<string[]>([]);
-    const [radiusKm, setRadiusKm] = useState<number | null>(10);
+    const [radiusKm, setRadiusKm] = useState<number | null>(null);
     const [myLocation, setMyLocation] = useState<{ lat: number; lng: number } | null>(null);
+    // yyyy-MM-dd, or null for "Any date"
+    const [scheduleDate, setScheduleDate] = useState<string | null>(null);
+    const [payTypeFilter, setPayTypeFilter] = useState<PayTypeFilter>("all");
 
     const [viewingHostId, setViewingHostId] = useState<string | null>(null);
     const [hostProfile, setHostProfile] = useState<HostLookupResult | null>(null);
@@ -168,8 +192,89 @@ const Browse = () => {
     const [reportSubmitting, setReportSubmitting] = useState(false);
     const [reportSubmitted, setReportSubmitted] = useState(false);
 
-    const user = useAppSelector((root) => root.user)
-    console.log(user)
+    // Filters are saved on the account (users/{uid}.gigFilters), shared
+    // with the app. Only a change the worker makes is saved, so untouched
+    // defaults keep following their skills: none yet → every gig at any
+    // distance; with skills → "My skills" within the smallest distance that
+    // reaches the nearest gig needing one of their skills, or No limit when
+    // there's none (same as the app).
+    const [filtersLoaded, setFiltersLoaded] = useState(!PERSIST_GIG_FILTERS);
+    const [usingDefaultFilters, setUsingDefaultFilters] = useState(true);
+    const lastSavedFilters = useRef<string | null>(null);
+    const hasSkills = workerSkills.length > 0;
+
+    // Smallest radius option that reaches the nearest gig needing one of
+    // the worker's skills (a gig 4 km away → 5 km); null = No limit.
+    const nearestSkillGigRadius = useMemo(() => {
+        if (!myLocation || !hasSkills) return null;
+        let nearestKm: number | null = null;
+        for (const g of [...openGigs, ...offeredGigs]) {
+            if (blockedHostIds.has(g.hostId) || !g.location) continue;
+            if (!g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))) continue;
+            const km = haversineKm(myLocation, g.location);
+            if (nearestKm === null || km < nearestKm) nearestKm = km;
+        }
+        if (nearestKm === null) return null;
+        const km = nearestKm;
+        return RADIUS_OPTIONS.find((r) => r !== null && km <= r) ?? null;
+    }, [myLocation, hasSkills, openGigs, offeredGigs, blockedHostIds, workerSkills]);
+
+    useEffect(() => {
+        if (!usingDefaultFilters) return;
+        // Defaults track the profile's skills, the live gigs and location.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setSkillFilter(hasSkills ? "mySkills" : "all");
+        setSpecificSkill(null);
+        setRadiusKm(nearestSkillGigRadius);
+    }, [hasSkills, nearestSkillGigRadius, usingDefaultFilters]);
+
+    // Wraps every filter control: the worker's own choice replaces the defaults
+    // (and is what's saved, when PERSIST_GIG_FILTERS is on).
+    function changeFilters(update: () => void) {
+        setUsingDefaultFilters(false);
+        update();
+    }
+
+    useEffect(() => {
+        if (!uid) return;
+        if (!PERSIST_GIG_FILTERS) return;
+        let cancelled = false;
+        fetchGigFilters(uid)
+            .then((saved) => {
+                if (cancelled) return;
+                if (saved && saved.skill) {
+                    setUsingDefaultFilters(false);
+                    const skill = saved.skill === "all" || saved.skill === "mySkills" || saved.skill === "specific" ? saved.skill : "all";
+                    const specific = typeof saved.specificSkill === "string" ? saved.specificSkill : null;
+                    const nextSkill = skill === "specific" && !specific ? "all" : skill;
+                    setSkillFilter(nextSkill);
+                    setSpecificSkill(specific);
+                    const nextRadius = saved.radiusSet ? (typeof saved.radiusKm === "number" ? saved.radiusKm : null) : null;
+                    setRadiusKm(nextRadius);
+                    const nextSchedule =
+                        typeof saved.scheduleDate === "string" && saved.scheduleDate >= todayLocalDateString() ? saved.scheduleDate : null;
+                    setScheduleDate(nextSchedule);
+                    const nextPayType = saved.payType === "hourly" || saved.payType === "flat" ? saved.payType : "all";
+                    setPayTypeFilter(nextPayType);
+                    lastSavedFilters.current = JSON.stringify([nextSkill, specific, nextRadius, nextSchedule, nextPayType]);
+                }
+                setFiltersLoaded(true);
+            })
+            .catch((err) => {
+                console.error("Failed to load saved filters:", err);
+                if (!cancelled) setFiltersLoaded(true);
+            });
+        return () => { cancelled = true; };
+    }, [uid]);
+
+    useEffect(() => {
+        if (!PERSIST_GIG_FILTERS || !uid || !filtersLoaded || usingDefaultFilters) return;
+        const key = JSON.stringify([skillFilter, specificSkill, radiusKm, scheduleDate, payTypeFilter]);
+        if (key === lastSavedFilters.current) return;
+        lastSavedFilters.current = key;
+        saveGigFilters(uid, { skill: skillFilter, specificSkill, radiusKm, radiusSet: true, scheduleDate, payType: payTypeFilter })
+            .catch((err) => console.error("Failed to save filters:", err));
+    }, [uid, filtersLoaded, usingDefaultFilters, skillFilter, specificSkill, radiusKm, scheduleDate, payTypeFilter]);
 
     useEffect(() => {
         if (!uid) return;
@@ -251,27 +356,66 @@ const Browse = () => {
         [openGigs, offeredGigs, blockedHostIds]
     );
 
+    const mySkillsMatched = useMemo(
+        () =>
+            allGigs.filter(
+                (g) => g.requiredSkills.length === 0 || g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))
+            ),
+        [allGigs, workerSkills]
+    );
+
+    // Mirrors gig_map_section.dart's _filteredGigs: if "Matches My Skills"
+    // would hide every gig, it falls back to showing all of them (with a
+    // note) rather than an empty list.
+    const noSkillMatches = skillFilter === "mySkills" && mySkillsMatched.length === 0 && allGigs.length > 0;
+
     const skillFiltered = useMemo(() => {
         if (skillFilter === "all") return allGigs;
         if (skillFilter === "specific") {
             if (!specificSkill) return allGigs;
             return allGigs.filter((g) => g.requiredSkills.some((s) => matchesSkill(s, specificSkill)));
         }
-        return allGigs.filter(
-            (g) => g.requiredSkills.length === 0 || g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))
-        );
-    }, [allGigs, skillFilter, specificSkill, workerSkills]);
+        return noSkillMatches ? allGigs : mySkillsMatched;
+    }, [allGigs, skillFilter, specificSkill, mySkillsMatched, noSkillMatches]);
 
-    const radiusFiltered = useMemo(() => {
-        if (radiusKm == null || !myLocation) return skillFiltered;
-        return skillFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
-    }, [skillFiltered, radiusKm, myLocation]);
+    const scheduleFiltered = useMemo(
+        () => skillFiltered.filter((g) => gigMatchesScheduleDate(g, scheduleDate)),
+        [skillFiltered, scheduleDate]
+    );
 
+    const payTypeFiltered = useMemo(
+        () => scheduleFiltered.filter((g) => gigMatchesPayType(g, payTypeFilter)),
+        [scheduleFiltered, payTypeFilter]
+    );
+
+    // Mirrors gig_map_section.dart's _filteredGigs: distance is applied last
+    // so that when nothing is inside the worker's radius, it can fall back
+    // to the nearest NEAREST_FALLBACK_COUNT gigs that match every other
+    // filter, instead of showing an empty list.
+    const NEAREST_FALLBACK_COUNT = 10;
+    const { radiusFiltered, nearestFallbackKm } = useMemo(() => {
+        if (radiusKm == null || !myLocation) return { radiusFiltered: payTypeFiltered, nearestFallbackKm: null as number | null };
+        const inside = payTypeFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
+        if (inside.length > 0 || payTypeFiltered.length === 0) {
+            return { radiusFiltered: inside, nearestFallbackKm: null as number | null };
+        }
+        const byDistance = payTypeFiltered
+            .filter((g): g is typeof g & { location: NonNullable<typeof g.location> } => !!g.location)
+            .map((g) => ({ gig: g, km: haversineKm(myLocation, g.location) }))
+            .sort((a, b) => a.km - b.km);
+        const nearest = byDistance.slice(0, NEAREST_FALLBACK_COUNT);
+        return { radiusFiltered: nearest.map((n) => n.gig), nearestFallbackKm: nearest[0]?.km ?? null };
+    }, [payTypeFiltered, radiusKm, myLocation]);
+
+    // A typed search looks past the radius, so searching another city or
+    // ZIP finds its gigs (same as the app) — schedule/pay type still apply.
+    const queryWords = useMemo(() => searchWords(searchTerm), [searchTerm]);
+    const searching = queryWords.length > 0;
+    const searchIgnoresRadius = searching && radiusKm != null && myLocation != null;
     const filteredGigs = useMemo(() => {
-        const term = searchTerm.trim().toLowerCase();
-        if (!term) return radiusFiltered;
-        return radiusFiltered.filter((gig) => gig.title.toLowerCase().includes(term) || gig.hostName.toLowerCase().includes(term));
-    }, [radiusFiltered, searchTerm]);
+        if (queryWords.length === 0) return radiusFiltered;
+        return payTypeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
+    }, [radiusFiltered, payTypeFiltered, queryWords]);
 
     useEffect(() => {
         // Defaults the detail pane to the first result whenever filters/search
@@ -476,7 +620,7 @@ const Browse = () => {
                         <div className="relative flex-1">
                             <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted" />
                             <Input
-                                placeholder="Search Gigs"
+                                placeholder="Search gigs, city, province or ZIP"
                                 className="pl-9"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -488,23 +632,23 @@ const Browse = () => {
                     <div className="mt-3 flex flex-wrap items-end gap-3">
                         <div className="flex flex-col gap-1">
                             <Label className="text-xs text-muted">Skills</Label>
-                            <Select value={skillFilter} onValueChange={(v) => setSkillFilter((v ?? "mySkills") as SkillFilter)}>
+                            <Select value={skillFilter} onValueChange={(v) => changeFilters(() => setSkillFilter((v ?? "mySkills") as SkillFilter))}>
                                 <SelectTrigger size="sm">
                                     <SelectValue>
-                                        {skillFilter === "all" ? "All gigs" : skillFilter === "mySkills" ? "My skills" : specificSkill ?? "Specific skill"}
+                                        {skillFilter === "all" ? "All Gigs" : skillFilter === "mySkills" ? "Matches My Skills" : specificSkill ?? "Specific Skill"}
                                     </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="all">All gigs</SelectItem>
-                                    <SelectItem value="mySkills">My skills</SelectItem>
-                                    <SelectItem value="specific">Specific skill</SelectItem>
+                                    <SelectItem value="all">All Gigs</SelectItem>
+                                    <SelectItem value="mySkills">Matches My Skills</SelectItem>
+                                    <SelectItem value="specific">Specific Skill</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
                         {skillFilter === "specific" && (
                             <div className="flex flex-col gap-1">
                                 <Label className="text-xs text-muted">Which skill</Label>
-                                <Select value={specificSkill ?? undefined} onValueChange={(v) => setSpecificSkill(v)}>
+                                <Select value={specificSkill ?? undefined} onValueChange={(v) => changeFilters(() => setSpecificSkill(v))}>
                                     <SelectTrigger size="sm">
                                         <SelectValue>{specificSkill ?? "Choose a skill"}</SelectValue>
                                     </SelectTrigger>
@@ -520,25 +664,102 @@ const Browse = () => {
                             <Label className="text-xs text-muted">Radius</Label>
                             <Select
                                 value={radiusKm === null ? "none" : String(radiusKm)}
-                                onValueChange={(v) => setRadiusKm(v === "none" || v === null ? null : Number(v))}
+                                onValueChange={(v) => changeFilters(() => setRadiusKm(v === "none" || v === null ? null : Number(v)))}
                             >
                                 <SelectTrigger size="sm">
-                                    <SelectValue>{radiusKm === null ? "No limit" : `${radiusKm} km`}</SelectValue>
+                                    <SelectValue>{radiusKm === null ? "Any" : `${radiusKm} km`}</SelectValue>
                                 </SelectTrigger>
                                 <SelectContent>
                                     {RADIUS_OPTIONS.map((r) => (
                                         <SelectItem key={r ?? "none"} value={r === null ? "none" : String(r)}>
-                                            {r === null ? "No limit" : `${r} km`}
+                                            {r === null ? "Any" : `${r} km`}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
                         </div>
+                        <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted">Schedule</Label>
+                            <div className="flex items-center gap-1">
+                                <Input
+                                    type="date"
+                                    className="h-8 w-[9.5rem] text-sm"
+                                    value={scheduleDate ?? ""}
+                                    min={todayLocalDateString()}
+                                    onChange={(e) => changeFilters(() => setScheduleDate(e.target.value || null))}
+                                />
+                                {scheduleDate && (
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        aria-label="Clear schedule filter"
+                                        onClick={() => changeFilters(() => setScheduleDate(null))}
+                                    >
+                                        <X className="size-3.5" />
+                                    </Button>
+                                )}
+                            </div>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted">Pay Type</Label>
+                            <Select value={payTypeFilter} onValueChange={(v) => changeFilters(() => setPayTypeFilter((v ?? "all") as PayTypeFilter))}>
+                                <SelectTrigger size="sm">
+                                    <SelectValue>
+                                        {payTypeFilter === "all" ? "All" : payTypeFilter === "hourly" ? "Hourly" : "Day"}
+                                    </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="all">All</SelectItem>
+                                    <SelectItem value="hourly">Hourly</SelectItem>
+                                    <SelectItem value="flat">Day</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted"
+                            onClick={() =>
+                                changeFilters(() => {
+                                    setSkillFilter("all");
+                                    setSpecificSkill(null);
+                                    setRadiusKm(null);
+                                    setScheduleDate(null);
+                                    setPayTypeFilter("all");
+                                })
+                            }
+                        >
+                            Reset
+                        </Button>
                     </div>
+                    {radiusKm != null && myLocation != null && (
+                        <p className="mt-1 text-xs text-muted">If nothing is within this distance, the nearest gigs are shown instead.</p>
+                    )}
+                    {radiusKm != null && myLocation == null && (
+                        <p className="mt-1 text-xs text-muted">Your location isn&apos;t available yet — distance filter will apply once located.</p>
+                    )}
 
                     <p className="mt-2 text-sm text-muted">
                         {loading ? "Loading gigs…" : `${filteredGigs.length} gig${filteredGigs.length === 1 ? "" : "s"}`}
+                        {!loading && searchIgnoresRadius && " · search shows matches at any distance"}
                     </p>
+
+                    {!loading && noSkillMatches && (
+                        <p className="mt-2 rounded-lg border border-(--quick-start)/60 bg-sidebar px-3 py-2 text-xs text-muted">
+                            No gigs for your skills yet. Add more in your{" "}
+                            <a href="/app/worker/toolchest" className="font-medium text-worker underline underline-offset-2">
+                                Toolchest
+                            </a>
+                            .
+                        </p>
+                    )}
+                    {!loading && !searching && nearestFallbackKm != null && radiusKm != null && (
+                        <p className="mt-2 rounded-lg border border-(--quick-start)/60 bg-sidebar px-3 py-2 text-xs text-muted">
+                            No gigs within {radiusKm} km. Showing the nearest — {formatDistanceKm(nearestFallbackKm)} away.
+                        </p>
+                    )}
 
                     <div className="mt-4 min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
                         {loading && (
@@ -554,7 +775,7 @@ const Browse = () => {
                         )}
 
                         {!loading && !error && filteredGigs.length === 0 && (
-                            <p className="rounded-lg border border-dashed border-hairline p-6 text-sm text-muted">No gigs match your filters.</p>
+                            <p className="rounded-lg border border-dashed border-hairline p-6 text-sm text-muted">{searching ? `No gigs match “${searchTerm.trim()}”.` : "No gigs match your filters."}</p>
                         )}
 
                         {!loading && !error && filteredGigs.map((gig) => (
@@ -589,6 +810,9 @@ const Browse = () => {
                                     <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                                         <MapIcon className="size-3.5 shrink-0" />
                                         <span className="truncate">{gig.address}</span>
+                                        {formatScheduleShort(gig.scheduledDate) && (
+                                            <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
+                                        )}
                                         {myLocation && gig.location && (
                                             <span className="shrink-0">· {haversineKm(myLocation, gig.location).toFixed(1)} km</span>
                                         )}
