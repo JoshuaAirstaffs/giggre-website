@@ -25,6 +25,7 @@ import {
   Smartphone,
   Star,
   Store,
+  Gift,
   Wallet as WalletIcon,
   type LucideIcon,
 } from "lucide-react";
@@ -126,6 +127,7 @@ const TX_ICON: Record<WalletTxType, { icon: LucideIcon; className: string }> = {
   fee: { icon: Percent, className: "bg-destructive/10 text-destructive" },
   adjustment: { icon: SlidersHorizontal, className: "bg-secondary text-secondary-foreground" },
   points_conversion: { icon: Star, className: "bg-blue-500/10 text-blue-700" },
+  promo: { icon: Gift, className: "bg-pink-500/10 text-pink-700" },
 };
 
 function TransactionIcon({ tx }: { tx: WalletTransaction }) {
