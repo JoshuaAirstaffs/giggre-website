@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, query, where, type Timestamp } from "firebase/firestore";
 import { Award, CheckCircle2, Gift, Tag } from "lucide-react";
-import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { redeemPromoCode } from "@/lib/firebase-functions";
@@ -41,7 +40,6 @@ function errorText(err: unknown): string {
 }
 
 interface Offer { id: string; code: string; name: string; rewardText: string; access: string; note: string | null; endsAt: Date | null; redeemed: boolean }
-interface PublicPromo { code: string; name: string; rewardText: string; rewardTextPHP?: string; rewardTextUSD?: string; region: string; startsAt: Date | null; endsAt: Date | null }
 
 const until = (d: Date | null) => (d ? `Until ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}` : null);
 
@@ -52,10 +50,6 @@ export function PromoCodeCard() {
   const [error, setError] = useState<string | null>(null);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
-  const [publicPromos, setPublicPromos] = useState<PublicPromo[]>([]);
-  // Region for ₱ / $ wording and region-only codes — same detection as miles/km.
-  const { miles } = useDistanceUnits();
-  const ph = !miles;
 
   useEffect(() => {
     if (!uid) return;
@@ -70,22 +64,7 @@ export function PromoCodeCard() {
       })),
       (err) => console.warn("[PromoCodeCard] offers:", err.code ?? err),
     );
-    const unsubPublic = onSnapshot(
-      collection(db, "promo_public"),
-      (snap) => setPublicPromos(snap.docs.map((d) => {
-        const x = d.data();
-        return {
-          code: x.code ?? d.id, name: x.name ?? "Promo", rewardText: x.rewardText ?? "", rewardTextPHP: x.rewardTextPHP,
-          rewardTextUSD: x.rewardTextUSD, region: x.region ?? "any",
-          startsAt: (x.startsAt as Timestamp | undefined)?.toDate() ?? null, endsAt: (x.endsAt as Timestamp | undefined)?.toDate() ?? null,
-        };
-      })),
-      (err) => console.warn("[PromoCodeCard] public promos:", err.code ?? err),
-    );
-    return () => {
-      unsubOffers();
-      unsubPublic();
-    };
+    return unsubOffers;
   }, [uid]);
 
   useEffect(() => {
@@ -158,18 +137,6 @@ export function PromoCodeCard() {
             .map((o) => ({
               code: o.code, name: o.name, note: o.note, restricted: o.access === "restricted",
               line: [o.rewardText, o.access === "restricted" ? "Just for you" : null, until(o.endsAt)].filter(Boolean).join(" · "),
-            }))}
-          busy={busy}
-          onUse={(c) => { setCode(c); redeem(c); }}
-        />
-        <PromoList
-          title="Available promos"
-          items={publicPromos
-            .filter((p) => (!p.startsAt || p.startsAt.getTime() <= Date.now()) && (!p.endsAt || p.endsAt.getTime() > Date.now()))
-            .filter((p) => p.region === "any" || (p.region === "PH") === ph)
-            .map((p) => ({
-              code: p.code, name: p.name, note: null, restricted: false,
-              line: [(ph ? p.rewardTextPHP : p.rewardTextUSD) ?? p.rewardText, until(p.endsAt)].filter(Boolean).join(" · "),
             }))}
           busy={busy}
           onUse={(c) => { setCode(c); redeem(c); }}
