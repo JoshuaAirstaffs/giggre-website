@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Inter, JetBrains_Mono, Space_Grotesk } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
@@ -12,26 +12,39 @@ export const metadata: Metadata = {
     "Giggre connects hosts who need a hand with workers nearby who can help — same block, same day.",
 };
 
-// next/font self-hosts and inlines these at build time (no runtime request to
-// Google Fonts, no separate @fontsource CSS files for Turbopack to process) —
-// same weights @fontsource previously loaded. Each font's `variable` writes
-// straight to the custom property globals.css's font tokens already expect,
-// so no other file needs to change which name it references.
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  weight: ["500", "600", "700"],
+// Self-hosted from the .woff2 files in ./fonts (copied from the
+// @fontsource/* packages — same weights the old next/font/google setup
+// loaded) rather than next/font/google, which fetches font metadata from
+// fonts.googleapis.com at build time: that request intermittently failed on
+// Hostinger's build server (and even locally in this sandbox), breaking the
+// whole build on a transient network hiccup unrelated to this code. Local
+// fonts have no such dependency — the files are already in the repo. Each
+// font's `variable` writes straight to the custom property globals.css's
+// font tokens already expect, so no other file needs to change which name
+// it references.
+const spaceGrotesk = localFont({
+  src: [
+    { path: "./fonts/space-grotesk-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-600-normal.woff2", weight: "600", style: "normal" },
+    { path: "./fonts/space-grotesk-latin-700-normal.woff2", weight: "700", style: "normal" },
+  ],
   variable: "--font-display",
   display: "swap",
 });
-const inter = Inter({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+const inter = localFont({
+  src: [
+    { path: "./fonts/inter-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/inter-latin-500-normal.woff2", weight: "500", style: "normal" },
+    { path: "./fonts/inter-latin-600-normal.woff2", weight: "600", style: "normal" },
+  ],
   variable: "--font-body",
   display: "swap",
 });
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ["latin"],
-  weight: ["400", "500"],
+const jetbrainsMono = localFont({
+  src: [
+    { path: "./fonts/jetbrains-mono-latin-400-normal.woff2", weight: "400", style: "normal" },
+    { path: "./fonts/jetbrains-mono-latin-500-normal.woff2", weight: "500", style: "normal" },
+  ],
   variable: "--font-mono",
   display: "swap",
 });
