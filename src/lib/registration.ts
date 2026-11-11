@@ -238,6 +238,9 @@ export async function createUserProfile(profile: NewUserProfile) {
     // ratings.ts); nothing reads the old ratingAsWorker/ratingAsHost/
     // ratingCount flat fields anymore.
     slot: "AVAILABLE",
+    // New workers start online (visible to hosts). Quick Gigs and Auto
+    // Accept stay off until the worker turns them on — same as the app.
+    availableForGigs: true,
     acceptanceRate: 1.0,
     isVerified: "unverified",
     referredBy: profile.referrer?.userId ?? null,

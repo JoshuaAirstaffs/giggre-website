@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Calendar } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatSchedule } from "@/lib/gig-format";
+import { formatGigSchedule } from "@/lib/gig-format";
 import type { HostGig } from "@/lib/host-gigs";
 
 interface UpcomingGigsCardProps {
@@ -41,7 +41,7 @@ export default function UpcomingGigsCard({ gigs }: UpcomingGigsCardProps) {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-ink">{gig.title}</p>
-                <p className="text-xs text-muted">{formatSchedule(gig.scheduledDate)}</p>
+                <p className="text-xs text-muted">{formatGigSchedule(gig.scheduledDate)}</p>
               </div>
             </Link>
           ))

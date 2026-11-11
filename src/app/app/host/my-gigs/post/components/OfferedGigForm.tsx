@@ -3,6 +3,7 @@
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Check, ChevronsUpDown, Star, Users, UserSearch, X } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -25,6 +26,8 @@ import {
   fetchFavoriteWorkers,
   findWorkerByUserId,
   postOfferedGig,
+  updateOfferedGig,
+  type EditGigData,
   type ExperienceLevel,
   type WorkerLookupResult,
 } from "@/lib/post-gig";
@@ -39,9 +42,11 @@ function initials(name: string) {
 
 interface OfferedGigFormProps {
   preselectedWorker?: WorkerLookupResult | null;
+  editGig?: EditGigData | null;
 }
 
-export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProps) {
+export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGigFormProps) {
+  const router = useRouter();
   const { authUser, profile } = useAppSelector((root) => root.user);
   const {
     fields,
@@ -50,6 +55,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     locating,
     captureLocation,
     reset,
+    seedFields,
     validateCommon,
     checkContent,
     getScheduledDate,
@@ -60,11 +66,11 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
   // Unverified earning limit (same check as the app before posting).
   const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [skills, setSkills] = useState<string[]>([]);
-  const [skillRequired, setSkillRequired] = useState("");
+  const [skillRequired, setSkillRequired] = useState(editGig?.skillRequired ?? "");
   // GSIN task type — shown once the admin has set up task types, then required.
-  const [taskTypeId, setTaskTypeId] = useState("");
+  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? "");
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
-  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editGig?.experienceLevel ?? "entry");
   // Arriving via the Favorites page's "Quick Offer" button — the parent page
   // keys this component by the resolved worker's uid (see post/page.tsx), so
   // by the time this instance mounts with a non-null preselectedWorker,
@@ -92,6 +98,18 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
       .catch((err) => console.error("Failed to load skills:", err));
   }, [authUser?.uid]);
 
+  // Seeds every field from the gig being edited — the parent page keys this
+  // component by editGig?.gigId (same remount-on-resolve pattern already
+  // used for preselectedWorker above), so this instance only ever mounts
+  // once editGig has its final value. Recipients are deliberately left
+  // alone (see the read-only recipient summary below) — editing never
+  // changes who it's offered to.
+  useEffect(() => {
+    if (!editGig) return;
+    seedFields(editGig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // "Post Again" from a past gig's detail page (see post-again.ts) — seeds
   // everything except schedule/location and the picked workers (the whole
   // point is letting the host re-pick who does the job this time). Runs
@@ -100,6 +118,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
   // applied here — this form derives its slot count from selectedWorkers,
   // not a typed field.
   useEffect(() => {
+    if (editGig) return;
     const prefill = consumePostAgainPrefill("offered");
     if (!prefill) return;
     setField("title", prefill.title);
@@ -174,17 +193,18 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     const error = validateCommon();
     if (error) return toast.error(error);
     if (!skillRequired) return toast.error("Please select a required skill.");
-    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
-    if (selectedWorkers.length === 0) {
+    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    if (!editGig && selectedWorkers.length === 0) {
       return toast.error("Please select at least one worker to offer this gig to.");
     }
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
 
-    if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, selectedWorkers.length), currencyCode, action: "post" }))) return;
+    const recipientCount = editGig ? editGig.workerSlots : selectedWorkers.length;
+    if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, recipientCount), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
-      const gigId = await postOfferedGig({
+      const input = {
         hostId: authUser.uid,
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
@@ -199,8 +219,14 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         skillRequired,
         experienceLevel,
         taskTypeId: taskTypeId || undefined,
-        workers: selectedWorkers,
-      });
+      };
+      if (editGig) {
+        await updateOfferedGig(editGig.gigId, input);
+        toast.success("Gig updated!");
+        router.push(`/app/host/my-gigs/offered/${editGig.gigId}`);
+        return;
+      }
+      const gigId = await postOfferedGig({ ...input, workers: selectedWorkers });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
@@ -209,12 +235,25 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
       setExperienceLevel("entry");
       setSelectedWorkers([]);
     } catch (err) {
-      console.error("Failed to post offered gig:", err);
-      toast.error("Couldn't post the gig. Please try again.");
+      console.error(editGig ? "Failed to update offered gig:" : "Failed to post offered gig:", err);
+      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post the gig. Please try again.");
     } finally {
       setSubmitting(false);
     }
   }
+
+  // Recipients can't be changed after posting (see canEditGig in
+  // host-gigs.ts) — a plain read-only summary replaces the interactive
+  // picker in edit mode.
+  const recipientSummary = (
+    <div className="space-y-1.5">
+      <Label>Offered to</Label>
+      <div className="rounded-lg border border-input bg-input/50 px-2.5 py-1.5 text-sm text-muted-foreground">
+        {editGig?.recipientNames?.length ? editGig.recipientNames.join(", ") : "—"}
+      </div>
+      <p className="text-xs text-muted">Recipients can&apos;t be changed after posting.</p>
+    </div>
+  );
 
   const workerPicker = (
     <div className="space-y-1.5">
@@ -340,10 +379,10 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
             fields={fields}
             setField={setField}
             currencyCode={currencyCode}
-            afterBudget={workerPicker}
+            afterBudget={editGig ? recipientSummary : workerPicker}
             workerSlotsField={
               <div className="flex h-8 items-center rounded-lg border border-input bg-input/50 px-2.5 text-sm text-muted-foreground">
-                {selectedWorkers.length}
+                {editGig?.workerSlots ?? selectedWorkers.length}
               </div>
             }
           />
@@ -366,7 +405,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
             </Select>
           </div>
 
-          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} disabled={!!editGig} />
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>
@@ -403,9 +442,9 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         disabled={submitting}
         className="w-full p-6 bg-(--offered-start) text-white hover:bg-(--offered-end)"
       >
-        {submitting ? "Posting…" : "Offer Gig"}
+        {editGig ? (submitting ? "Saving…" : "Save Changes") : submitting ? "Posting…" : "Offer Gig"}
       </Button>
-      {lastGigId && (
+      {!editGig && lastGigId && (
         <p className="text-xs text-muted">
           Gig ID (offered_gigs): <code className="font-mono">{lastGigId}</code>
         </p>

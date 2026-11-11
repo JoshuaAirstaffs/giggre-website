@@ -24,7 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAppSelector } from "@/store/hooks";
-import { capitalize, formatSchedule, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, payLabel } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
   fetchHostGigDetail,
@@ -279,7 +279,7 @@ export default function MyGigsPage() {
                         <TableCell>
                           {gig.filledSlotCount}/{gig.workerSlots}
                         </TableCell>
-                        <TableCell className="text-muted">{formatSchedule(gig.scheduledDate)}</TableCell>
+                        <TableCell className="text-muted">{formatGigSchedule(gig.scheduledDate)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Button

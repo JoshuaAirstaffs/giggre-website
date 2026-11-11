@@ -3,22 +3,26 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Sparkles, Users, UserSearch } from "lucide-react";
+import { toast } from "sonner";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { fetchWorkerByUid, type WorkerLookupResult } from "@/lib/post-gig";
+import { fetchGigForEdit, fetchWorkerByUid, type EditGigData, type WorkerLookupResult } from "@/lib/post-gig";
 import QuickGigForm from "./components/QuickGigForm";
 import OpenGigForm from "./components/OpenGigForm";
 import OfferedGigForm from "./components/OfferedGigForm";
 
 const TAB_VALUES = new Set(["quick", "open", "offered"]);
+const EDIT_GIG_TYPES = new Set(["open", "offered"]);
 
 function PostGigPageContent() {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get("tab");
   const workerId = searchParams.get("workerId");
+  const editId = searchParams.get("editId");
   const defaultTab = tabParam && TAB_VALUES.has(tabParam) ? tabParam : "quick";
   const [preselectedWorker, setPreselectedWorker] = useState<WorkerLookupResult | null>(null);
+  const [editGig, setEditGig] = useState<EditGigData | null>(null);
 
   // Arriving from the Favorites page's "Quick Offer" button
   // (?tab=offered&workerId=...) — re-fetch that worker fresh rather than
@@ -36,9 +40,37 @@ function PostGigPageContent() {
     };
   }, [workerId]);
 
+  // Arriving from a gig's detail page "Edit" button (?tab=open|offered&editId=...)
+  // — fetched here (not inside the form) so OpenGigForm/OfferedGigForm, keyed
+  // by editGig?.gigId below, only ever mount once this has its final value,
+  // the same resolve-then-remount pattern already used for preselectedWorker.
+  useEffect(() => {
+    if (!editId || !tabParam || !EDIT_GIG_TYPES.has(tabParam)) return;
+    let cancelled = false;
+    fetchGigForEdit(tabParam as "open" | "offered", editId)
+      .then((gig) => {
+        if (cancelled) return;
+        if (!gig) {
+          toast.error("Couldn't find that gig to edit.");
+          return;
+        }
+        setEditGig(gig);
+      })
+      .catch((err) => {
+        console.error("Failed to load gig for editing:", err);
+        if (!cancelled) toast.error("Couldn't load that gig. Please try again.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, tabParam]);
+
   return (
     <JoshDiv>
-      <TitlePage title="Post a gig" description="Choose how you want to get this job done" />
+      <TitlePage
+        title={editGig ? "Edit gig" : "Post a gig"}
+        description={editGig ? `Editing "${editGig.title}"` : "Choose how you want to get this job done"}
+      />
 
       <div className="mx-auto mt-6 max-w-6xl">
         <Tabs defaultValue={defaultTab}>
@@ -62,15 +94,22 @@ function PostGigPageContent() {
           </TabsContent>
 
           <TabsContent value="open" className="mt-4">
-            <OpenGigForm />
+            {/* Keyed by the resolved gig so the form mounts fresh (and seeds
+                itself from editGig) once the ?editId= lookup resolves,
+                instead of syncing it in via an effect after the fact. */}
+            <OpenGigForm key={editGig?.gigId ?? "none"} editGig={editGig} />
           </TabsContent>
 
           <TabsContent value="offered" className="mt-4">
-            {/* Keyed by the resolved worker so the form mounts fresh (and
-                seeds its selection from preselectedWorker) once the
-                ?workerId= lookup resolves, instead of syncing it in via an
-                effect after the fact. */}
-            <OfferedGigForm key={preselectedWorker?.uid ?? "none"} preselectedWorker={preselectedWorker} />
+            {/* Keyed by the resolved worker/gig so the form mounts fresh (and
+                seeds its selection from preselectedWorker, or every field
+                from editGig) once that lookup resolves, instead of syncing
+                it in via an effect after the fact. */}
+            <OfferedGigForm
+              key={editGig?.gigId ?? preselectedWorker?.uid ?? "none"}
+              preselectedWorker={preselectedWorker}
+              editGig={editGig}
+            />
           </TabsContent>
         </Tabs>
       </div>

@@ -61,13 +61,16 @@ export default function AvailabilitySettings() {
   }
 
   function handleAvailableChange(next: boolean) {
-    // Available for gigs is a prerequisite for Quick Gigs — turning it off
-    // takes Quick Gigs with it so the toggles never show a contradictory state.
+    // Available for gigs is the main switch — turning it off takes Quick Gigs
+    // and Auto Accept with it (same as the app), so the toggles never show a
+    // contradictory state.
     save(
       "availableForGigs",
       "Available for gigs",
       next,
-      next ? { availableForGigs: true } : { availableForGigs: false, seekingQuickGigs: false }
+      next
+        ? { availableForGigs: true }
+        : { availableForGigs: false, seekingQuickGigs: false, autoAccept: false }
     );
   }
 

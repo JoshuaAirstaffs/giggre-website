@@ -19,6 +19,7 @@ import {
   AlertCircle,
   Bookmark,
   Navigation,
+  Pencil,
   RefreshCw,
   User,
   Users,
@@ -43,9 +44,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { capitalize, formatDuration, formatSchedule, formatWorkDuration, payLabel, salary } from "@/lib/gig-format";
+import { capitalize, formatDuration, formatGigSchedule, formatSchedule, formatWorkDuration, payLabel, salary } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
+  canEditGig,
   canPostAgain,
   closeRemainingSpots,
   isAcceptingApplicants,
@@ -416,6 +418,17 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                 {capitalize(gig.gigType)}
               </Badge>
               <Badge variant="secondary">{formatStatus(gig.status)}</Badge>
+              {canEditGig(gig) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  render={<Link href={`/app/host/my-gigs/post?tab=${gig.gigType}&editId=${gig.id}`} />}
+                  nativeButton={false}
+                >
+                  <Pencil className="size-3.5" />
+                  Edit
+                </Button>
+              )}
               {canPostAgain(gig) && (
                 <Button variant="outline" size="sm" onClick={handlePostAgain}>
                   <RefreshCw className="size-3.5" />
@@ -849,7 +862,7 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                     </div>
                     <div className="min-w-0">
                       <p className="text-xs text-muted">Scheduled</p>
-                      <p className="text-sm text-ink">{formatSchedule(gig.scheduledDate)}</p>
+                      <p className="text-sm text-ink">{formatGigSchedule(gig.scheduledDate)}</p>
                     </div>
                   </div>
                   {gig.workDurationHours !== undefined && (

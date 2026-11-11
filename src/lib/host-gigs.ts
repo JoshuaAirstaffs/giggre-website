@@ -854,6 +854,18 @@ export function canPostAgain(gig: HostGigDetail): boolean {
   return false;
 }
 
+// There's no edit feature in the mobile app to mirror — this is new. Kept
+// deliberately narrow: only while nothing has been committed to yet, so an
+// edit never changes terms a worker already applied to or accepted. An open
+// gig is editable only before its first applicant; an offered gig only
+// while still pending (status flips off "offered" the moment any recipient
+// accepts or declines — see acceptOfferedGig/declineOfferedGig).
+export function canEditGig(gig: HostGigDetail): boolean {
+  if (gig.gigType === "open") return gig.status === "open" && !gig.slotsClosed && gig.applicantCount === 0;
+  if (gig.gigType === "offered") return gig.status === "offered";
+  return false;
+}
+
 export type CashPaymentResult = { ok: true; paymentCode: string } | { ok: false; reason: string };
 
 // Same 6-digit, digits-only format as _generatePaymentCode in
