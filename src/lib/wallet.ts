@@ -67,7 +67,8 @@ export type WalletTxType =
   | "refund"
   | "fee"
   | "adjustment"
-  | "points_conversion";
+  | "points_conversion"
+  | "promo";
 
 export interface WalletTransaction {
   id: string;
@@ -372,6 +373,8 @@ export function walletTransactionTitle(tx: WalletTransaction): string {
       return "Fee";
     case "points_conversion":
       return "Gig Points";
+    case "promo":
+      return "Promo";
     default:
       return "Adjustment";
   }
@@ -399,6 +402,8 @@ export function walletTxTypeLabel(type: WalletTxType): string {
       return "Fee";
     case "points_conversion":
       return "Gig Points";
+    case "promo":
+      return "Promo";
     default:
       return "Adjustment";
   }

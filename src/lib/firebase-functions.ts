@@ -210,3 +210,19 @@ export async function checkAccountExists(email: string): Promise<boolean> {
   const result = await callable<{ email: string }, { exists: boolean }>("checkAccountExists")({ email });
   return result.data.exists === true;
 }
+
+// ── Promo codes (giggre-admin → Promotions; giggre_app functions/src/promos.ts)
+export interface PromoRedeemResult {
+  type: "gig_points" | "wallet_credit" | "gig_cashback";
+  name?: string;
+  message?: string;
+  points?: number;
+  amount?: number;
+  currencyCode?: string;
+  voucherId?: string;
+}
+
+export async function redeemPromoCode(code: string): Promise<PromoRedeemResult> {
+  const result = await callable<{ code: string }, PromoRedeemResult>("redeemPromoCode")({ code });
+  return result.data;
+}

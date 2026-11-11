@@ -7,6 +7,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Ban, CheckCircle2, CircleX, Hourglass, LockKeyhole, MinusCircle, PlayCircle, Radar, Repeat, SettingsIcon, ShieldOff, Timer, Trash2 } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
+import { PromoCodeCard } from "@/components/PromoCodeCard";
 import JoshDiv from "@/components/DivAnimation";
 import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -271,6 +272,8 @@ export default function SettingsPage() {
             <GigMatchingConfigCard config={matchingConfig} />
           </>
         )}
+
+        <PromoCodeCard />
 
         <Card>
           <CardHeader>
