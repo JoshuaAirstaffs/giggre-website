@@ -2,17 +2,11 @@
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
+import { SkillSelect, isCustomSkill } from "./SkillSelect";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAppSelector } from "@/store/hooks";
 import { fetchSkillNames } from "@/lib/browse-gigs";
 import { consumePostAgainPrefill } from "@/lib/post-again";
@@ -85,7 +79,8 @@ export default function OpenGigForm() {
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
-    if (!requiredSkill) return toast.error("Please select a required skill.");
+    if (!requiredSkill.trim()) return toast.error("Please select a required skill (or type one under Other).");
+    if (requiredSkill.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
     if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
@@ -106,8 +101,9 @@ export default function OpenGigForm() {
         place: fields.place,
         scheduledDate: getScheduledDate(),
         workerSlots: Number(fields.workerSlots),
-        requiredSkill,
+        requiredSkill: requiredSkill.trim(),
         experienceLevel,
+        customSkill: isCustomSkill(requiredSkill, skills),
         taskTypeId: taskTypeId || undefined,
       });
       toast.success("Gig Successfully Posted");
@@ -134,23 +130,7 @@ export default function OpenGigForm() {
         <div className="space-y-4">
           <CommonGigDetails fields={fields} setField={setField} currencyCode={currencyCode} />
 
-          <div className="space-y-1.5">
-            <Label>
-              Required skill <span className="text-destructive">*</span>
-            </Label>
-            <Select value={requiredSkill} onValueChange={(v) => setRequiredSkill(v ?? "")}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a skill">{requiredSkill || "Select a skill"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {skills.map((skill) => (
-                  <SelectItem key={skill} value={skill}>
-                    {skill}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <SkillSelect value={requiredSkill} onChange={setRequiredSkill} skills={skills} />
 
           <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} />
 

@@ -372,7 +372,7 @@ const Browse = () => {
     const mySkillsMatched = useMemo(
         () =>
             allGigs.filter(
-                (g) => g.requiredSkills.length === 0 || g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))
+                (g) => g.requiredSkills.length === 0 || g.customSkill || g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))
             ),
         [allGigs, workerSkills]
     );
@@ -458,7 +458,8 @@ const Browse = () => {
     }
 
     function missingSkills(gig: Gig) {
-        if (gig.gigType !== "open" || gig.requiredSkills.length === 0) return [];
+        // A skill typed under "Other" isn't in anyone's profile — anyone can apply.
+        if (gig.gigType !== "open" || gig.requiredSkills.length === 0 || gig.customSkill) return [];
         return gig.requiredSkills.filter((s) => !workerSkills.some((ws) => matchesSkill(ws, s)));
     }
 

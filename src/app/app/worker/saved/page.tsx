@@ -182,7 +182,8 @@ export default function SavedGigsPage() {
   }
 
   function missingSkills(gig: Gig) {
-    if (gig.gigType !== "open" || gig.requiredSkills.length === 0) return [];
+    // A skill typed under "Other" isn't in anyone's profile — anyone can apply.
+    if (gig.gigType !== "open" || gig.requiredSkills.length === 0 || gig.customSkill) return [];
     return gig.requiredSkills.filter((s) => !workerSkills.some((ws) => matchesSkill(ws, s)));
   }
 

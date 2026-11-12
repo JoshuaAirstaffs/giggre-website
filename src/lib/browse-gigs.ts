@@ -56,6 +56,8 @@ export interface Gig {
   location: { lat: number; lng: number } | null;
   experienceLevel: string;
   requiredSkills: string[];
+  /** Skill typed under "Other" (not in the library) — shown to every worker. */
+  customSkill: boolean;
   applicants: ApplicantEntry[];
   applicantCount: number;
   scheduledDate: Date | null;
@@ -253,6 +255,7 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     experienceLevel: (data.experienceLevel as string) ?? "",
     requiredSkills: (data.requiredSkills as string[] | undefined) ?? [],
+    customSkill: data.customSkill === true,
     applicants,
     applicantCount: gigType === "open" ? applicants.length : 0,
     scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,

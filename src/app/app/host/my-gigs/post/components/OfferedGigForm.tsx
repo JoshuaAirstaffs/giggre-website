@@ -2,6 +2,7 @@
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
+import { SkillSelect, isCustomSkill } from "./SkillSelect";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Check, ChevronsUpDown, Star, Users, UserSearch, X } from "lucide-react";
@@ -10,13 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useAppSelector } from "@/store/hooks";
 import { fetchSkillNames } from "@/lib/browse-gigs";
 import { consumePostAgainPrefill } from "@/lib/post-again";
@@ -173,7 +167,8 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
-    if (!skillRequired) return toast.error("Please select a required skill.");
+    if (!skillRequired.trim()) return toast.error("Please select a required skill (or type one under Other).");
+    if (skillRequired.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
     if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     if (selectedWorkers.length === 0) {
       return toast.error("Please select at least one worker to offer this gig to.");
@@ -196,8 +191,9 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
         address: fields.address.trim(),
         place: fields.place,
         scheduledDate: getScheduledDate(),
-        skillRequired,
+        skillRequired: skillRequired.trim(),
         experienceLevel,
+        customSkill: isCustomSkill(skillRequired, skills),
         taskTypeId: taskTypeId || undefined,
         workers: selectedWorkers,
       });
@@ -348,23 +344,7 @@ export default function OfferedGigForm({ preselectedWorker }: OfferedGigFormProp
             }
           />
 
-          <div className="space-y-1.5">
-            <Label>
-              Required skill <span className="text-destructive">*</span>
-            </Label>
-            <Select value={skillRequired} onValueChange={(v) => setSkillRequired(v ?? "")}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a skill">{skillRequired || "Select a skill"}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {skills.map((skill) => (
-                  <SelectItem key={skill} value={skill}>
-                    {skill}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <SkillSelect value={skillRequired} onChange={setSkillRequired} skills={skills} />
 
           <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} />
 
