@@ -50,6 +50,9 @@ export function PromoCodeCard() {
   const [error, setError] = useState<string | null>(null);
   const [vouchers, setVouchers] = useState<Voucher[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
+  // Read once per mount via a lazy initializer rather than calling Date.now()
+  // directly in the render body (same pattern as WorkingTimer.tsx).
+  const [now] = useState(() => Date.now());
 
   useEffect(() => {
     if (!uid) return;
@@ -133,7 +136,7 @@ export function PromoCodeCard() {
         <PromoList
           title="For you"
           items={offers
-            .filter((o) => !o.redeemed && (!o.endsAt || o.endsAt.getTime() > Date.now()))
+            .filter((o) => !o.redeemed && (!o.endsAt || o.endsAt.getTime() > now))
             .map((o) => ({
               code: o.code, name: o.name, note: o.note, restricted: o.access === "restricted",
               line: [o.rewardText, o.access === "restricted" ? "Just for you" : null, until(o.endsAt)].filter(Boolean).join(" · "),
@@ -148,7 +151,7 @@ export function PromoCodeCard() {
             <p className="text-xs text-muted">Used automatically on your next completed gig as a host.</p>
             {vouchers.map((v) => {
               const used = v.status === "used";
-              const expired = !used && !!v.expiresAt && v.expiresAt.getTime() < Date.now();
+              const expired = !used && !!v.expiresAt && v.expiresAt.getTime() < now;
               const what = v.mode === "fixed"
                 ? `${money(v.amount ?? 0, v.currencyCode)} cashback`
                 : `${v.percent}% cashback (up to ${money(v.maxCashback ?? 0, v.currencyCode)})`;

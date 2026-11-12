@@ -212,13 +212,14 @@ export async function saveGigFilters(uid: string, filters: Required<SavedGigFilt
   });
 }
 
-// Matches gig_map_section.dart's schedule-date comparison exactly: a date
-// filter is set, and the gig has no scheduledDate at all, never matches
-// (treated as stale data, not "any date") — only year/month/day are
-// compared, the time of day is ignored.
+// Diverges from gig_map_section.dart on purpose: the app treats a missing
+// scheduledDate as stale data and never matches a date filter against it,
+// because it has no "Anytime" posting option (see the `anytime` field on
+// CommonGigFieldsState, website-only) — a flexible gig is available on
+// every date, so it always matches here instead.
 export function gigMatchesScheduleDate(gig: Gig, scheduleDate: string | null): boolean {
   if (!scheduleDate) return true;
-  if (!gig.scheduledDate) return false;
+  if (!gig.scheduledDate) return true;
   const [y, m, d] = scheduleDate.split("-").map(Number);
   return gig.scheduledDate.getFullYear() === y && gig.scheduledDate.getMonth() + 1 === m && gig.scheduledDate.getDate() === d;
 }

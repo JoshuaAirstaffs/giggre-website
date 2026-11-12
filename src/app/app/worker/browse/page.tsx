@@ -41,7 +41,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatPostedAge, formatSchedule, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
@@ -697,6 +697,18 @@ const Browse = () => {
                         <div className="flex flex-col gap-1">
                             <Label className="text-xs text-muted">Schedule</Label>
                             <div className="flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => changeFilters(() => setScheduleDate(null))}
+                                    className={cn(
+                                        "flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-sm",
+                                        scheduleDate === null
+                                            ? "border-worker bg-worker-tint font-medium text-(--worker-text)"
+                                            : "border-input text-muted-foreground hover:bg-accent"
+                                    )}
+                                >
+                                    Any
+                                </button>
                                 <Input
                                     type="date"
                                     className="h-8 w-[9.5rem] text-sm"
@@ -826,9 +838,7 @@ const Browse = () => {
                                     <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                                         <MapIcon className="size-3.5 shrink-0" />
                                         <span className="truncate">{gig.address}</span>
-                                        {formatScheduleShort(gig.scheduledDate) && (
-                                            <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
-                                        )}
+                                        <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
                                         {myLocation && gig.location && (
                                             <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
                                         )}
@@ -932,7 +942,7 @@ const Browse = () => {
 
                                 <div>
                                     <SectionLabel icon={Calendar}>Schedule</SectionLabel>
-                                    <p className="mt-1 text-sm text-ink">{formatSchedule(selectedGig.scheduledDate)}</p>
+                                    <p className="mt-1 text-sm text-ink">{formatGigSchedule(selectedGig.scheduledDate)}</p>
                                 </div>
 
                                 {selectedGig.workDurationHours !== undefined && (

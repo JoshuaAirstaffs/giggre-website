@@ -11,11 +11,15 @@ import { fitsSkill, loadGsinTaskTypes, type GsinTaskTypeOption } from "@/lib/gsi
  * Offered gigs), task types linked to that skill come first as "Suggested",
  * and a single match is picked automatically (the host can still change it).
  */
-export function TaskTypeSelect({ value, onChange, skill, onAvailable }: {
+export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }: {
   value: string;
   onChange: (id: string) => void;
   skill?: string;
   onAvailable?: (available: boolean) => void;
+  // Locked once a gig exists — firestore.rules blocks the entire update if
+  // taskTypeId is among the changed keys (see commonGigUpdateFields in
+  // post-gig.ts), since a Cloud Function derives GSIN codes from it once.
+  disabled?: boolean;
 }) {
   const [options, setOptions] = useState<GsinTaskTypeOption[] | null>(null);
   const autoPicked = useRef("");
@@ -56,7 +60,7 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable }: {
       <Label>
         Task type <span className="text-destructive">*</span>
       </Label>
-      <Select value={value} onValueChange={(v) => { autoPicked.current = ""; onChange(v ?? ""); }}>
+      <Select value={value} onValueChange={(v) => { autoPicked.current = ""; onChange(v ?? ""); }} disabled={disabled}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder={placeholder}>{options.find((t) => t.id === value)?.name || placeholder}</SelectValue>
         </SelectTrigger>
@@ -83,6 +87,7 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable }: {
           ))}
         </SelectContent>
       </Select>
+      {disabled && <p className="text-xs text-muted">Can&apos;t be changed after posting.</p>}
     </div>
   );
 }

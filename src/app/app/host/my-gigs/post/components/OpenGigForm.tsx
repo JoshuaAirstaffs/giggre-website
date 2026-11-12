@@ -4,17 +4,29 @@ import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
 import { SkillSelect, isCustomSkill } from "./SkillSelect";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { useAppSelector } from "@/store/hooks";
 import { fetchSkillNames } from "@/lib/browse-gigs";
 import { consumePostAgainPrefill } from "@/lib/post-again";
-import { EXPERIENCE_LEVEL_OPTIONS, postOpenGig, type ExperienceLevel } from "@/lib/post-gig";
+import {
+  EXPERIENCE_LEVEL_OPTIONS,
+  postOpenGig,
+  updateOpenGig,
+  type EditGigData,
+  type ExperienceLevel,
+} from "@/lib/post-gig";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 
-export default function OpenGigForm() {
+interface OpenGigFormProps {
+  editGig?: EditGigData | null;
+}
+
+export default function OpenGigForm({ editGig }: OpenGigFormProps) {
+  const router = useRouter();
   const { authUser, profile } = useAppSelector((root) => root.user);
   const {
     fields,
@@ -23,6 +35,7 @@ export default function OpenGigForm() {
     locating,
     captureLocation,
     reset,
+    seedFields,
     validateCommon,
     checkContent,
     getScheduledDate,
@@ -33,13 +46,23 @@ export default function OpenGigForm() {
   // Unverified earning limit (same check as the app before posting).
   const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [skills, setSkills] = useState<string[]>([]);
-  const [requiredSkill, setRequiredSkill] = useState("");
+  const [requiredSkill, setRequiredSkill] = useState(editGig?.requiredSkill ?? "");
   // GSIN task type — shown once the admin has set up task types, then required.
-  const [taskTypeId, setTaskTypeId] = useState("");
+  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? "");
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
-  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>("entry");
+  const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editGig?.experienceLevel ?? "entry");
   const [submitting, setSubmitting] = useState(false);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
+
+  // Seeds every field from the gig being edited — the parent page keys this
+  // component by editGig?.gigId (same remount-on-resolve pattern post/page.tsx
+  // already uses for preselectedWorker), so this instance only ever mounts
+  // once editGig has its final value.
+  useEffect(() => {
+    if (!editGig) return;
+    seedFields(editGig);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // Firestore's `skills` collection requires an authenticated read
@@ -57,6 +80,7 @@ export default function OpenGigForm() {
   // set fresh. Runs once on mount; harmless no-op on a dev StrictMode
   // double-invoke since the prefill is already cleared after the first run.
   useEffect(() => {
+    if (editGig) return;
     const prefill = consumePostAgainPrefill("open");
     if (!prefill) return;
     setField("title", prefill.title);
@@ -81,14 +105,14 @@ export default function OpenGigForm() {
     if (error) return toast.error(error);
     if (!requiredSkill.trim()) return toast.error("Please select a required skill (or type one under Other).");
     if (requiredSkill.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
-    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
     const contentError = await checkContent();
     if (contentError) return toast.error(contentError);
 
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
-      const gigId = await postOpenGig({
+      const input = {
         hostId: authUser.uid,
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
@@ -105,7 +129,14 @@ export default function OpenGigForm() {
         experienceLevel,
         customSkill: isCustomSkill(requiredSkill, skills),
         taskTypeId: taskTypeId || undefined,
-      });
+      };
+      if (editGig) {
+        await updateOpenGig(editGig.gigId, input);
+        toast.success("Gig updated!");
+        router.push(`/app/host/my-gigs/open/${editGig.gigId}`);
+        return;
+      }
+      const gigId = await postOpenGig(input);
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
@@ -113,8 +144,8 @@ export default function OpenGigForm() {
       setTaskTypeId("");
       setExperienceLevel("entry");
     } catch (err) {
-      console.error("Failed to post open gig:", err);
-      toast.error("Couldn't post the gig. Please try again.");
+      console.error(editGig ? "Failed to update open gig:" : "Failed to post open gig:", err);
+      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post the gig. Please try again.");
     } finally {
       setSubmitting(false);
     }
@@ -132,7 +163,7 @@ export default function OpenGigForm() {
 
           <SkillSelect value={requiredSkill} onChange={setRequiredSkill} skills={skills} />
 
-          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} disabled={!!editGig} />
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>
@@ -165,9 +196,9 @@ export default function OpenGigForm() {
       </div>
 
       <Button onClick={handleSubmit} disabled={submitting} className="w-full p-6 bg-worker text-white hover:bg-(--worker-end)">
-        {submitting ? "Posting…" : "Post Open Gig"}
+        {editGig ? (submitting ? "Saving…" : "Save Changes") : submitting ? "Posting…" : "Post Open Gig"}
       </Button>
-      {lastGigId && (
+      {!editGig && lastGigId && (
         <p className="text-xs text-muted">
           Gig ID (open_gigs): <code className="font-mono">{lastGigId}</code>
         </p>

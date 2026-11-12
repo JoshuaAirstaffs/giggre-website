@@ -4,6 +4,7 @@ import {
   addDoc,
   arrayRemove,
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -181,6 +182,148 @@ export async function postOfferedGig(input: OfferedGigInput): Promise<string> {
   }
 
   return ref.id;
+}
+
+// Same fields commonGigFields writes, minus createdAt/filledSlotCount/
+// slotsCompleted/workerSlots (editing never resets progress or the original
+// post time; workerSlots is set separately per gig type, see below) and
+// minus taskTypeId — firestore.rules' changesGigCodes() hard-blocks the
+// ENTIRE update (not just that field) if taskTypeId is among the changed
+// keys, since a Cloud Function derives GSIN codes from it once at creation
+// and never expects it to move afterward. The edit form locks that field's
+// control for the same reason (see TaskTypeSelect's `disabled` prop).
+function commonGigUpdateFields(input: Omit<CommonGigInput, "workerSlots">) {
+  return {
+    title: input.title,
+    description: input.description,
+    budget: input.budget,
+    currencyCode: input.currencyCode,
+    location: new GeoPoint(input.location.lat, input.location.lng),
+    address: input.address,
+    ...(input.place && Object.keys(input.place).length > 0 ? { place: input.place } : {}),
+    // Explicitly cleared (not just omitted) when switching to "Anytime" —
+    // an edit updateDoc merges, so omitting it here would leave a
+    // previously-set date stranded instead of actually clearing it.
+    scheduledDate: input.scheduledDate ? Timestamp.fromDate(input.scheduledDate) : deleteField(),
+    ratePerSlot: input.budget,
+    payType: input.payType,
+    hourlyRate: input.hourlyRate,
+    ...(input.workDurationHours !== undefined ? { workDurationHours: input.workDurationHours } : {}),
+  };
+}
+
+// Only while no one has applied yet (see canEditGig in host-gigs.ts) — same
+// fields the create form writes, so an edited gig looks exactly like one
+// posted fresh with the new values. workerSlots is separately editable here
+// (open gigs only; an offered gig's slot count is fixed by its recipients).
+export async function updateOpenGig(gigId: string, input: OpenGigInput): Promise<void> {
+  await updateDoc(doc(db, "open_gigs", gigId), {
+    ...commonGigUpdateFields(input),
+    workerSlots: input.workerSlots,
+    requiredSkills: [input.requiredSkill],
+    experienceLevel: input.experienceLevel,
+  });
+}
+
+// Only while still pending (status "offered", before any recipient has
+// accepted/declined — see canEditGig). Recipients themselves aren't
+// editable here, so workerSlots (= recipient count) is untouched; the
+// per-recipient `workers` subcollection (multi-recipient gigs only) carries
+// its own denormalized copy of the pay fields (see postOfferedGig), kept in
+// sync here the same way.
+export async function updateOfferedGig(
+  gigId: string,
+  input: Omit<OfferedGigInput, "workers">
+): Promise<void> {
+  await updateDoc(doc(db, "offered_gigs", gigId), {
+    ...commonGigUpdateFields(input),
+    skillRequired: input.skillRequired,
+    experienceLevel: input.experienceLevel,
+  });
+
+  const workersSnap = await getDocs(collection(db, "offered_gigs", gigId, "workers"));
+  if (workersSnap.empty) return;
+  const batch = writeBatch(db);
+  for (const workerDoc of workersSnap.docs) {
+    batch.update(workerDoc.ref, {
+      rate: input.budget,
+      payType: input.payType,
+      hourlyRate: input.hourlyRate,
+      currencyCode: input.currencyCode,
+    });
+  }
+  await batch.commit();
+}
+
+export interface EditGigData {
+  gigId: string;
+  gigType: "open" | "offered";
+  title: string;
+  description: string;
+  payType: PayType;
+  budget: number;
+  hourlyRate: number | null;
+  workDurationHours?: number;
+  workerSlots: number;
+  requiredSkill?: string; // open gigs
+  skillRequired?: string; // offered gigs
+  experienceLevel: ExperienceLevel;
+  taskTypeId?: string;
+  location: GigLocation;
+  address: string;
+  place?: GigPlace | null;
+  scheduledDate: Date | null;
+  // Display-only summary of who an offered gig is going to — editing never
+  // changes recipients, so there's nothing richer (photo/rating/etc.) to
+  // reconstruct here, just enough to show the host who it's for.
+  recipientNames?: string[];
+}
+
+const EDIT_GIG_COLLECTIONS: Record<"open" | "offered", string> = {
+  open: "open_gigs",
+  offered: "offered_gigs",
+};
+
+// Reads a gig fresh (not from the display-oriented HostGigDetail) so the
+// edit form gets exactly the raw fields it needs to seed itself, including
+// ones HostGigDetail never surfaces (place, taskTypeId).
+export async function fetchGigForEdit(gigType: "open" | "offered", gigId: string): Promise<EditGigData | null> {
+  const snap = await getDoc(doc(db, EDIT_GIG_COLLECTIONS[gigType], gigId));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  const geo = data.location as GeoPoint | undefined;
+
+  let recipientNames: string[] | undefined;
+  if (gigType === "offered") {
+    const singleName = data.workerName as string | undefined;
+    if (singleName) {
+      recipientNames = [singleName];
+    } else {
+      const workersSnap = await getDocs(collection(db, "offered_gigs", gigId, "workers"));
+      recipientNames = workersSnap.docs.map((d) => (d.data().workerName as string | undefined) || "Unknown");
+    }
+  }
+
+  return {
+    gigId,
+    gigType,
+    title: (data.title as string) ?? "",
+    description: (data.description as string) ?? "",
+    payType: (data.payType as PayType | undefined) ?? "flat",
+    budget: (data.ratePerSlot as number | undefined) ?? (data.budget as number | undefined) ?? 0,
+    hourlyRate: (data.hourlyRate as number | undefined) ?? null,
+    workDurationHours: data.workDurationHours as number | undefined,
+    workerSlots: (data.workerSlots as number | undefined) ?? 1,
+    requiredSkill: (data.requiredSkills as string[] | undefined)?.[0],
+    skillRequired: data.skillRequired as string | undefined,
+    experienceLevel: (data.experienceLevel as ExperienceLevel | undefined) ?? "entry",
+    taskTypeId: data.taskTypeId as string | undefined,
+    location: geo ? { lat: geo.latitude, lng: geo.longitude } : { lat: 0, lng: 0 },
+    address: (data.address as string) ?? "",
+    place: (data.place as GigPlace | undefined) ?? null,
+    scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,
+    recipientNames,
+  };
 }
 
 export interface WorkerLookupResult {

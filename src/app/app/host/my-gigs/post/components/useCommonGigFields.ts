@@ -31,6 +31,11 @@ export interface CommonGigFieldsState {
   // independently clearable, combined into one DateTime at submit time.
   scheduledDate: string;
   scheduledTime: string;
+  // New — not in the app, which always requires a specific date/time (see
+  // validateCommon). When true, the date/time inputs are ignored entirely:
+  // getScheduledDate() returns null, meaning "available whenever", not
+  // "not yet scheduled".
+  anytime: boolean;
   address: string;
   location: GigLocation | null;
   // Derived from `location` (see setLocation below) — drives both the
@@ -50,6 +55,7 @@ const emptyCommonFields: CommonGigFieldsState = {
   workerSlots: "1",
   scheduledDate: "",
   scheduledTime: "",
+  anytime: false,
   address: "",
   location: null,
   countryCode: null,
@@ -161,11 +167,53 @@ export function useCommonGigFields() {
     setFields(emptyCommonFields);
   }
 
+  // Seeds every common field from an existing gig (see EditGigData in
+  // post-gig.ts) — the edit counterpart to reset(). Reverses resolvePayFields:
+  // hourly's on-screen rate is the stored hourlyRate, with estimatedHours
+  // back-derived from budget/hourlyRate (the only place that ratio is still
+  // recoverable, since workDurationHours is a separate, purely informational
+  // field — see its comment on CommonGigInput).
+  function seedFields(seed: {
+    title: string;
+    description: string;
+    payType: PayType;
+    budget: number;
+    hourlyRate: number | null;
+    workDurationHours?: number;
+    workerSlots: number;
+    location: GigLocation;
+    address: string;
+    place?: GigPlace | null;
+    scheduledDate: Date | null;
+  }) {
+    const rate = seed.payType === "hourly" ? (seed.hourlyRate ?? 0) : seed.budget;
+    const estimatedHours = seed.payType === "hourly" && seed.hourlyRate ? seed.budget / seed.hourlyRate : null;
+    const d = seed.scheduledDate;
+    const scheduledDate = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "";
+    const scheduledTime = d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "";
+    setFields({
+      title: seed.title,
+      description: seed.description,
+      budget: String(rate),
+      payType: seed.payType,
+      estimatedHours: estimatedHours !== null ? String(estimatedHours) : "",
+      workDurationHours: seed.workDurationHours != null ? String(seed.workDurationHours) : "",
+      workerSlots: String(seed.workerSlots),
+      scheduledDate,
+      scheduledTime,
+      anytime: d === null,
+      address: seed.address,
+      location: seed.location,
+      countryCode: seed.place?.countryCode ?? null,
+      place: seed.place ?? null,
+    });
+  }
+
   // Combines the separate date/time inputs into one Date, same as the app's
   // submit-time logic — a date with no time defaults to 8:00 AM
   // (post_open_gig_screen.dart line ~303: `TimeOfDay(hour: 8, minute: 0)`).
   function getScheduledDate(): Date | null {
-    if (!fields.scheduledDate) return null;
+    if (fields.anytime || !fields.scheduledDate) return null;
     const [year, month, day] = fields.scheduledDate.split("-").map(Number);
     let hour = 8;
     let minute = 0;
@@ -197,12 +245,15 @@ export function useCommonGigFields() {
     if (!fields.location) return "Please set the gig location.";
     if (!fields.address.trim()) return "Please enter an address.";
     // Mirrors the app's own validation exactly (post_*_gig_screen.dart): only
-    // the date is required — time defaults to 8:00 AM if left unset.
-    if (!fields.scheduledDate) return "Schedule is required. Please pick a date and time.";
-    const scheduled = getScheduledDate();
-    if (!scheduled) return "Schedule is required. Please pick a date and time.";
-    if (scheduled.getTime() < Date.now()) {
-      return "That time has already passed. Please choose a time in the future.";
+    // the date is required — time defaults to 8:00 AM if left unset. Not
+    // in the app: "Anytime" skips this entirely — see getScheduledDate.
+    if (!fields.anytime) {
+      if (!fields.scheduledDate) return "Schedule is required. Please pick a date and time, or choose Anytime.";
+      const scheduled = getScheduledDate();
+      if (!scheduled) return "Schedule is required. Please pick a date and time, or choose Anytime.";
+      if (scheduled.getTime() < Date.now()) {
+        return "That time has already passed. Please choose a time in the future.";
+      }
     }
 
     // Mirrors the app's "Outside Your Country" check (post_*_gig_screen.dart,
@@ -259,6 +310,7 @@ export function useCommonGigFields() {
     locating,
     captureLocation,
     reset,
+    seedFields,
     validateCommon,
     checkContent,
     getScheduledDate,

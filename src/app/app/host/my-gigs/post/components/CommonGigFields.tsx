@@ -204,6 +204,10 @@ interface CommonGigScheduleProps {
   setLocation: (location: GigLocation) => void;
   locating: boolean;
   captureLocation: () => void;
+  // Open/Offered only — a Quick Gig is dispatched by a client-side matching
+  // service keyed off a real scheduledDate (see quick_gig_matching_service.dart),
+  // which has no concept of "Anytime", so QuickGigForm opts out.
+  allowAnytime?: boolean;
 }
 
 // Schedule + location — the "when and where" side of the form. Rendered in
@@ -214,40 +218,75 @@ export function CommonGigSchedule({
   setLocation,
   locating,
   captureLocation,
+  allowAnytime = true,
 }: CommonGigScheduleProps) {
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <Label>
-          Scheduled date &amp; time <span className="text-destructive">*</span>
-        </Label>
-        <div className="flex gap-3">
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="gig-schedule-date" className="text-xs font-normal text-muted-foreground">
-              Date
-            </Label>
-            <ClearableInput
-              id="gig-schedule-date"
-              type="date"
-              value={fields.scheduledDate}
-              onChange={(v) => setField("scheduledDate", v)}
-              clearLabel="Clear date"
-            />
-          </div>
-          <div className="flex-1 space-y-1">
-            <Label htmlFor="gig-schedule-time" className="text-xs font-normal text-muted-foreground">
-              Time
-            </Label>
-            <ClearableInput
-              id="gig-schedule-time"
-              type="time"
-              value={fields.scheduledTime}
-              onChange={(v) => setField("scheduledTime", v)}
-              clearLabel="Clear time"
-            />
-          </div>
+        <div className="flex items-center justify-between gap-2">
+          <Label>
+            Scheduled date &amp; time {!(allowAnytime && fields.anytime) && <span className="text-destructive">*</span>}
+          </Label>
+          {allowAnytime && (
+            <div className="flex gap-1.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setField("anytime", false)}
+                className={
+                  !fields.anytime
+                    ? "rounded-md border border-worker bg-worker-tint px-2 py-1 font-medium text-(--worker-text)"
+                    : "rounded-md border border-hairline px-2 py-1 text-muted"
+                }
+              >
+                Specific time
+              </button>
+              <button
+                type="button"
+                onClick={() => setField("anytime", true)}
+                className={
+                  fields.anytime
+                    ? "rounded-md border border-worker bg-worker-tint px-2 py-1 font-medium text-(--worker-text)"
+                    : "rounded-md border border-hairline px-2 py-1 text-muted"
+                }
+              >
+                Anytime
+              </button>
+            </div>
+          )}
         </div>
-        <p className="text-xs text-muted">A date without a time defaults to 8:00 AM.</p>
+        {allowAnytime && fields.anytime ? (
+          <p className="text-xs text-muted">No fixed schedule — a worker can take this gig whenever they&apos;re available.</p>
+        ) : (
+          <>
+            <div className="flex gap-3">
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="gig-schedule-date" className="text-xs font-normal text-muted-foreground">
+                  Date
+                </Label>
+                <ClearableInput
+                  id="gig-schedule-date"
+                  type="date"
+                  value={fields.scheduledDate}
+                  onChange={(v) => setField("scheduledDate", v)}
+                  clearLabel="Clear date"
+                />
+              </div>
+              <div className="flex-1 space-y-1">
+                <Label htmlFor="gig-schedule-time" className="text-xs font-normal text-muted-foreground">
+                  Time
+                </Label>
+                <ClearableInput
+                  id="gig-schedule-time"
+                  type="time"
+                  value={fields.scheduledTime}
+                  onChange={(v) => setField("scheduledTime", v)}
+                  clearLabel="Clear time"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted">A date without a time defaults to 8:00 AM.</p>
+          </>
+        )}
       </div>
 
       <div className="space-y-1.5">

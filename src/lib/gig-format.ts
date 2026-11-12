@@ -16,6 +16,8 @@ export function formatPostedAge(date: Date | null) {
   return pluralize(Math.floor(days / 365), "year");
 }
 
+// Generic — a "—" placeholder here means missing/unavailable data (a
+// timeline entry, createdAt, cancelledAt), never an intentional choice.
 export function formatSchedule(date: Date | null) {
   if (!date) return "—";
   return date.toLocaleDateString("en-US", {
@@ -27,12 +29,18 @@ export function formatSchedule(date: Date | null) {
   });
 }
 
-// Same format as formatSchedule (e.g. "Thu, Nov 19, 8:53 AM"), but returns
-// null instead of a "—" placeholder for a gig with no scheduledDate — the
-// browse-list gig card omits the whole segment rather than showing a dash.
-export function formatScheduleShort(date: Date | null): string | null {
-  if (!date) return null;
-  return formatSchedule(date);
+// For a gig's own scheduledDate specifically, where null is the "Anytime"
+// option (no fixed schedule — see the `anytime` field on
+// CommonGigFieldsState) rather than missing data, so it gets a real label
+// instead of formatSchedule's generic "—".
+export function formatGigSchedule(date: Date | null): string {
+  return date ? formatSchedule(date) : "Anytime";
+}
+
+// Same as formatGigSchedule, for the compact weekday + time shown on a gig
+// card in the browse list (see formatSchedule's own format).
+export function formatScheduleShort(date: Date | null): string {
+  return date ? formatSchedule(date) : "Anytime";
 }
 
 export function currencySymbol(currency?: string) {

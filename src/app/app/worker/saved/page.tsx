@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatPostedAge, formatSchedule, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import {
   acceptOfferedGig,
   applyToOpenGig,
@@ -356,7 +356,7 @@ export default function SavedGigsPage() {
                         </span>
                         <span className="flex items-center gap-1.5 shrink-0">
                           <Calendar className="size-3.5" />
-                          {formatSchedule(saved.gig.scheduledDate)}
+                          {formatGigSchedule(saved.gig.scheduledDate)}
                         </span>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -425,7 +425,7 @@ export default function SavedGigsPage() {
 
                 <div>
                   <SectionLabel icon={Calendar}>Schedule</SectionLabel>
-                  <p className="mt-1 text-sm text-ink">{formatSchedule(viewingGig.scheduledDate)}</p>
+                  <p className="mt-1 text-sm text-ink">{formatGigSchedule(viewingGig.scheduledDate)}</p>
                 </div>
 
                 {viewingGig.workDurationHours !== undefined && (

@@ -295,6 +295,7 @@ export default function QuickGigForm() {
           setLocation={setLocation}
           locating={locating}
           captureLocation={captureLocation}
+          allowAnytime={false}
         />
       </div>
       <Button

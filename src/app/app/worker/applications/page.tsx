@@ -13,7 +13,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
-import { capitalize, formatPostedAge, formatSchedule, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, payLabel } from "@/lib/gig-format";
 import {
   CANCELLABLE_GIG_STATUSES,
   subscribeAcceptedApplications,
@@ -227,7 +227,7 @@ export default function MyApplicationsPage() {
                         )}
                         <div className="flex items-center gap-1 text-xs text-muted">
                           <Calendar className="size-3 shrink-0" />
-                          <p>{formatSchedule(app.scheduledDate)}</p>
+                          <p>{formatGigSchedule(app.scheduledDate)}</p>
                         </div>
                       </div>
 
@@ -279,7 +279,7 @@ export default function MyApplicationsPage() {
                         )}
                         <div className="flex items-center gap-1 text-xs text-muted">
                           <Calendar className="size-3 shrink-0" />
-                          <p>{formatSchedule(gig.scheduledDate)}</p>
+                          <p>{formatGigSchedule(gig.scheduledDate)}</p>
                         </div>
                         <div className="flex items-center gap-1 text-xs text-muted">
                           <Clock className="size-3 shrink-0" />
