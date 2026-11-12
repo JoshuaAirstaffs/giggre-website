@@ -133,13 +133,13 @@ export async function deleteUserDocument(uid: string, document: UserDocument): P
 
 export type VerificationStatus = "unverified" | "pending" | "verified" | "rejected";
 
-// Requires at least one worker-category AND one host-category document,
-// matching _checkUploadedDocuments in verification_screen.dart — verification
-// is one flag for the whole account, not split per role.
+// Requires at least one document from either role (worker_* or host_*),
+// matching _checkUploadedDocuments in verification_screen.dart, so a
+// host-only or worker-only user isn't made to upload for the other role.
 export function canSubmitVerification(documents: UserDocument[]): boolean {
   const hasWorkerDoc = documents.some((d) => d.category.startsWith("worker_"));
   const hasHostDoc = documents.some((d) => d.category.startsWith("host_"));
-  return hasWorkerDoc && hasHostDoc;
+  return hasWorkerDoc || hasHostDoc;
 }
 
 export async function submitVerificationRequest(

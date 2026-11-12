@@ -238,7 +238,7 @@ export default function VerificationPage({ role }: { role: "host" | "worker" }) 
           <AlertDialogHeader>
             <AlertDialogTitle>Unable to Submit</AlertDialogTitle>
             <AlertDialogDescription>
-              Upload at least 1 document for each role (Gig Worker &amp; Gig Host) in My Documents to continue.
+              Upload at least 1 document (as a Gig Worker or a Gig Host) in My Documents to continue.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
