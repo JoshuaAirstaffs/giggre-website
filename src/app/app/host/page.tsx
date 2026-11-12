@@ -12,6 +12,7 @@ import SpendChartCard from "./components/SpendChartCard";
 import NeedsAttentionCard from "./components/NeedsAttentionCard";
 import UpcomingGigsCard from "./components/UpcomingGigsCard";
 import GigTypeBreakdownCard from "./components/GigTypeBreakdownCard";
+import WorkersOnlineCard from "./components/WorkersOnlineCard";
 
 export default function HostDashboardPage() {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
@@ -55,6 +56,7 @@ export default function HostDashboardPage() {
       ) : (
         <div className="mt-6 space-y-4">
           <DashboardStatsRow gigs={gigs} completedEntries={entries} currencyCode={currencyCode} />
+          <WorkersOnlineCard />
 
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="space-y-4 lg:col-span-2">

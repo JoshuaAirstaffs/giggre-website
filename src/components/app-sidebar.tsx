@@ -23,6 +23,7 @@ import {
   AlertTitle,
 } from "@/components/ui/alert"
 import { Button } from "./ui/button"
+import { ModeSwitch } from "./ModeSwitch"
 import { useAppSelector } from "@/store/hooks"
 import { subscribeUnreadRoomsCount } from "@/lib/chat"
 import { subscribeSupportUnreadCount } from "@/lib/support"
@@ -92,6 +93,11 @@ export function AppSidebar({
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        {role && (
+          <div className="px-2 pt-1 group-data-[collapsible=icon]:hidden">
+            <ModeSwitch role={role} />
+          </div>
+        )}
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navItems} activeUrl={activeUrl} role={role} />
