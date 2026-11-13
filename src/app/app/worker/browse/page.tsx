@@ -227,6 +227,10 @@ const Browse = () => {
     // yyyy-MM-dd, or null for "Any date"
     const [scheduleDate, setScheduleDate] = useState<string | null>(null);
     const [payTypeFilter, setPayTypeFilter] = useState<PayTypeFilter>("all");
+    // "desc" (newest post on top) is the default — not part of changeFilters/
+    // Reset, since it's a display order rather than a filter that narrows
+    // results.
+    const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
     const [viewingHostId, setViewingHostId] = useState<string | null>(null);
     const [hostProfile, setHostProfile] = useState<HostLookupResult | null>(null);
@@ -472,9 +476,12 @@ const Browse = () => {
     const searching = queryWords.length > 0;
     const searchIgnoresRadius = searching && radiusKm != null && myLocation != null;
     const filteredGigs = useMemo(() => {
-        if (queryWords.length === 0) return radiusFiltered;
-        return payTypeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
-    }, [radiusFiltered, payTypeFiltered, queryWords]);
+        const base = queryWords.length === 0 ? radiusFiltered : payTypeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
+        return [...base].sort((a, b) => {
+            const diff = (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0);
+            return sortOrder === "asc" ? diff : -diff;
+        });
+    }, [radiusFiltered, payTypeFiltered, queryWords, sortOrder]);
 
     useEffect(() => {
         // Defaults the detail pane to the first result whenever filters/search
@@ -788,6 +795,18 @@ const Browse = () => {
                                     <SelectItem value="all">All</SelectItem>
                                     <SelectItem value="hourly">Hourly</SelectItem>
                                     <SelectItem value="flat">Day</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                            <Label className="text-xs text-muted">Sort</Label>
+                            <Select value={sortOrder} onValueChange={(v) => setSortOrder((v ?? "desc") as "desc" | "asc")}>
+                                <SelectTrigger size="sm">
+                                    <SelectValue>{sortOrder === "desc" ? "Newest first" : "Oldest first"}</SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="desc">Newest first</SelectItem>
+                                    <SelectItem value="asc">Oldest first</SelectItem>
                                 </SelectContent>
                             </Select>
                         </div>
