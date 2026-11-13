@@ -247,6 +247,17 @@ export function gigMatchesPayType(gig: Gig, payType: PayTypeFilter): boolean {
   return gig.payType !== "hourly";
 }
 
+// Mirrors gig_map_section.dart's pay-range filter: compares the hourly rate
+// for an hourly gig, the flat budget otherwise, against the worker's own
+// currency. A gig in another currency is hidden entirely once a range is
+// set — amounts are never converted between currencies here.
+export function gigMatchesPayRange(gig: Gig, payMin: number | null, payMax: number | null, payCurrency: string): boolean {
+  if (payMin == null && payMax == null) return true;
+  if (gig.currencyCode !== payCurrency) return false;
+  const pay = gig.payType === "hourly" && gig.hourlyRate != null ? gig.hourlyRate : gig.budget;
+  return (payMin == null || pay >= payMin) && (payMax == null || pay <= payMax);
+}
+
 function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig {
   const geo = data.location as GeoPoint | undefined;
   const applicants = ((data.applicants as ApplicantEntry[] | undefined) ?? []).map((a) => ({
