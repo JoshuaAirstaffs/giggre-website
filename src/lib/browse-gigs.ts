@@ -120,9 +120,23 @@ export async function fetchHostByUid(uid: string): Promise<HostLookupResult | nu
 // lookups) — backs the "Verified" badge next to the host's name on the gig
 // details panel, which needs this the moment a gig is selected rather than
 // only once the full host profile drawer is opened.
-export async function fetchHostIsVerified(uid: string): Promise<boolean> {
+export interface HostQuickInfo {
+  isVerified: boolean;
+  photoUrl: string | null;
+}
+
+// Mirrors fetchHostInfo in gig_map_section.dart — the lazy, per-selected-gig
+// lookup the detail view uses for the host's real photo (falling back to an
+// initial/icon avatar while it loads, fails, or is absent — see AvatarHost).
+// Reads isVerified too, which that one didn't need, but it's the same
+// users/{uid} doc either way — one read instead of two.
+export async function fetchHostQuickInfo(uid: string): Promise<HostQuickInfo> {
   const snap = await getDoc(doc(db, "users", uid));
-  return (snap.data()?.isVerified as string | undefined) === "verified";
+  const data = snap.data();
+  return {
+    isVerified: (data?.isVerified as string | undefined) === "verified",
+    photoUrl: (data?.photoUrl as string | undefined) || null,
+  };
 }
 
 // Live-mirrors any user's own `blockedUsers` array — mirrors
@@ -255,7 +269,15 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     place: placeOf(data.place),
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     experienceLevel: (data.experienceLevel as string) ?? "",
-    requiredSkills: (data.requiredSkills as string[] | undefined) ?? [],
+    // open_gigs stores an array (requiredSkills); offered_gigs stores one
+    // skill as a plain string (skillRequired) — normalized to the same
+    // array shape here so Skills/SkillIcon/the skill filter work for both.
+    requiredSkills:
+      gigType === "offered"
+        ? typeof data.skillRequired === "string" && data.skillRequired
+          ? [data.skillRequired]
+          : []
+        : ((data.requiredSkills as string[] | undefined) ?? []),
     customSkill: data.customSkill === true,
     applicants,
     applicantCount: gigType === "open" ? applicants.length : 0,

@@ -32,6 +32,7 @@ import {
     Send,
     Star,
     Tag,
+    User,
     Users,
     Wallet,
     X,
@@ -40,6 +41,7 @@ import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
+import SkillIcon from "@/components/SkillIcon";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
@@ -51,7 +53,7 @@ import {
     declineOfferedGig,
     fetchHostByUid,
     fetchGigFilters,
-    fetchHostIsVerified,
+    fetchHostQuickInfo,
     fetchSkillNames,
     gigMatchesPayType,
     gigMatchesScheduleDate,
@@ -69,6 +71,7 @@ import {
     workerHasPendingCancellation,
     type Gig,
     type HostLookupResult,
+    type HostQuickInfo,
     type PayTypeFilter,
 } from "@/lib/browse-gigs";
 
@@ -122,10 +125,50 @@ function matchesSkill(a: string, b: string) {
     return a.toLowerCase().trim() === b.toLowerCase().trim();
 }
 
-function AvatarHost({ hostname }: { hostname?: string }) {
+// Mirrors the gig detail sheet's host avatar in gig_map_section.dart: the
+// real photo when there is one, otherwise a generic person icon (the app
+// itself falls back to a single initial letter here, not an icon, but
+// Icons.person is its own established fallback for a missing profile photo
+// elsewhere in the app — used here instead since initials-only was the
+// thing being replaced).
+function AvatarHost({ hostname, photoUrl }: { hostname?: string; photoUrl?: string | null }) {
     return (<Avatar className="h-20 w-20 rounded-2xl after:rounded-2xl">
-        <AvatarFallback className="rounded-2xl bg-worker-tint text-2xl font-semibold text-(--worker-text)">{initialsOf(hostname)}</AvatarFallback>
+        {photoUrl && <AvatarImage src={photoUrl} alt={hostname} className="rounded-2xl" />}
+        <AvatarFallback className="rounded-2xl bg-worker-tint text-(--worker-text)">
+            <User className="size-8" />
+        </AvatarFallback>
     </Avatar>)
+}
+
+// Mirrors the gig list card's left-side "skill icon tile" in
+// gig_map_section.dart (_GigListCard) — the gig's first required skill's
+// GSIN icon (or a generic handshake icon, same as SkillIcon's own fallback),
+// tinted with the gig type's own accent color instead of a host photo. The
+// app shows no host avatar at all in this list — only the detail view does
+// (see AvatarHost above), which is unaffected by this.
+function GigSkillTile({ gigType, requiredSkills }: { gigType: Gig["gigType"]; requiredSkills: string[] }) {
+    const isOpen = gigType === "open";
+    // The lucide fallback icon tints correctly via `className` (it's inline
+    // SVG honoring currentColor and so follows dark mode); the admin's own
+    // Iconify-hosted icon is a remote image instead, tinted server-side via
+    // Iconify's `color` query param, which needs a literal color value — a
+    // light-mode-only tradeoff versus the CSS custom properties used
+    // everywhere else on this page.
+    return (
+        <div
+            className={cn(
+                "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl",
+                isOpen ? "bg-worker-tint" : "bg-(--offered-tint)"
+            )}
+        >
+            <SkillIcon
+                skillName={requiredSkills[0]}
+                size={40}
+                color={isOpen ? "#1F4D80" : "#4A34A6"}
+                className={isOpen ? "text-(--worker-text)" : "text-(--offered-text)"}
+            />
+        </div>
+    );
 }
 
 function Skills({ skills }: { skills: string[] | [] }) {
@@ -133,7 +176,10 @@ function Skills({ skills }: { skills: string[] | [] }) {
     return (
         <div className="flex flex-wrap gap-1.5">
             {skills.map((skill) => (
-                <Badge key={skill} variant="secondary">{skill}</Badge>
+                <Badge key={skill} variant="secondary" className="gap-1">
+                    <SkillIcon skillName={skill} size={12} color="#1F4D80" className="text-(--worker-text)" />
+                    {skill}
+                </Badge>
             ))}
         </div>
     )
@@ -188,8 +234,9 @@ const Browse = () => {
     // Keyed by hostId so repeatedly selecting gigs from the same host (common
     // when one host posts several) doesn't refetch — separate from
     // hostProfile above since that's only populated once the full profile
-    // drawer is opened, but the gig details panel needs this immediately.
-    const [hostVerifiedById, setHostVerifiedById] = useState<Map<string, boolean>>(new Map());
+    // drawer is opened, but the gig details panel needs this immediately
+    // (verification badge + avatar photo).
+    const [hostInfoById, setHostInfoById] = useState<Map<string, HostQuickInfo>>(new Map());
     const [blockedHostIds, setBlockedHostIds] = useState<Set<string>>(new Set());
     const [blocking, setBlocking] = useState(false);
 
@@ -442,16 +489,16 @@ const Browse = () => {
 
     useEffect(() => {
         const hostId = selectedGig?.hostId;
-        if (!hostId || hostVerifiedById.has(hostId)) return;
+        if (!hostId || hostInfoById.has(hostId)) return;
         let cancelled = false;
-        fetchHostIsVerified(hostId)
-            .then((isVerified) => {
+        fetchHostQuickInfo(hostId)
+            .then((info) => {
                 if (cancelled) return;
-                setHostVerifiedById((prev) => new Map(prev).set(hostId, isVerified));
+                setHostInfoById((prev) => new Map(prev).set(hostId, info));
             })
-            .catch((err) => console.error("Failed to check host verification status:", err));
+            .catch((err) => console.error("Failed to load host info:", err));
         return () => { cancelled = true; };
-    }, [selectedGig?.hostId, hostVerifiedById]);
+    }, [selectedGig?.hostId, hostInfoById]);
 
     function hasApplied(gig: Gig) {
         return !!uid && gig.applicants.some((a) => a.workerId === uid);
@@ -815,7 +862,7 @@ const Browse = () => {
                                     gig.id === selectedId ? "border-worker bg-worker-tint" : "border-hairline bg-sidebar hover:bg-mist"
                                 )}
                             >
-                                <AvatarHost hostname={gig.hostName} />
+                                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} />
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
@@ -871,7 +918,7 @@ const Browse = () => {
                         <div className="flex h-full min-h-0 flex-col overflow-y-auto rounded-lg border border-hairline bg-sidebar p-6 shadow-sm">
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-start gap-4">
-                                    <AvatarHost hostname={selectedGig.hostName} />
+                                    <AvatarHost hostname={selectedGig.hostName} photoUrl={hostInfoById.get(selectedGig.hostId)?.photoUrl} />
                                     <div className="min-w-0">
                                         <div className="font-display text-xl font-semibold text-ink">{selectedGig.title}</div>
                                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
@@ -881,7 +928,7 @@ const Browse = () => {
                                                 className="inline-flex items-center gap-1 font-medium hover:cursor-pointer text-ink underline-offset-2 hover:underline"
                                             >
                                                 {selectedGig.hostName}
-                                                {hostVerifiedById.get(selectedGig.hostId) && (
+                                                {hostInfoById.get(selectedGig.hostId)?.isVerified && (
                                                     <BadgeCheck className="size-3.5 shrink-0 fill-blue-500 text-white" />
                                                 )}
                                             </button>
