@@ -22,11 +22,14 @@ import {
   Navigation,
   Pencil,
   RefreshCw,
+  Trash2,
   User,
   Users,
   Wallet,
+  XCircle,
 } from "lucide-react";
 import JoshDiv from "@/components/DivAnimation";
+import SkillIcon from "@/components/SkillIcon";
 import WorkingTimer from "@/components/WorkingTimer";
 import {
   AlertDialog,
@@ -48,9 +51,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { capitalize, formatDuration, formatGigSchedule, formatSchedule, formatWorkDuration, payLabel, salary } from "@/lib/gig-format";
 import { GIG_TYPE_BADGE_CLASSES, type GigTypeKey } from "@/lib/earnings";
 import {
+  canCancelGig,
+  canDeleteGig,
   canEditGig,
   canPostAgain,
   closeRemainingSpots,
+  deleteGig,
   isAcceptingApplicants,
   keepLookingForReplacement,
   markGigComplete,
@@ -67,6 +73,7 @@ import { setPostAgainPrefill } from "@/lib/post-again";
 import type { ExperienceLevel } from "@/lib/post-gig";
 import { useFavoriteWorkerIds } from "@/hooks/use-favorite-worker-ids";
 import { useAppSelector } from "@/store/hooks";
+import CancelGigDialog from "../../components/CancelGigDialog";
 import CashPaymentDialog from "../../components/CashPaymentDialog";
 import SaveTemplateDialog from "../../components/SaveTemplateDialog";
 import ViewPaymentCodeDialog from "../../components/ViewPaymentCodeDialog";
@@ -160,12 +167,15 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
   const [closingSpots, setClosingSpots] = useState(false);
   const [confirmMarkComplete, setConfirmMarkComplete] = useState(false);
   const [markingComplete, setMarkingComplete] = useState(false);
+  const [confirmDeleteGig, setConfirmDeleteGig] = useState(false);
+  const [deletingGig, setDeletingGig] = useState(false);
   const [keepLookingOpen, setKeepLookingOpen] = useState(false);
   const [keepLookingDate, setKeepLookingDate] = useState("");
   const [keepLookingTime, setKeepLookingTime] = useState("");
   const [settingKeepLooking, setSettingKeepLooking] = useState(false);
   const [paymentTarget, setPaymentTarget] = useState<HostGigWorkerEntry | null>(null);
   const [savingTemplateFor, setSavingTemplateFor] = useState<HostGigDetail | null>(null);
+  const [cancellingGig, setCancellingGig] = useState<HostGigDetail | null>(null);
   const [viewCodeTarget, setViewCodeTarget] = useState<HostGigWorkerEntry | null>(null);
   const [favoritingId, setFavoritingId] = useState<string | null>(null);
   // Workers default to expanded — this just tracks who's been collapsed,
@@ -268,6 +278,26 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
     } finally {
       setMarkingComplete(false);
       setConfirmMarkComplete(false);
+    }
+  }
+
+  async function handleDeleteGig() {
+    if (!gig) return;
+    setDeletingGig(true);
+    try {
+      const result = await deleteGig(gig);
+      if (result.ok) {
+        toast.success("Gig deleted.");
+        router.push("/app/host/my-gigs");
+      } else {
+        toast.error(result.reason);
+      }
+    } catch (err) {
+      console.error("Failed to delete gig:", err);
+      toast.error("Couldn't delete this gig. Please try again.");
+    } finally {
+      setDeletingGig(false);
+      setConfirmDeleteGig(false);
     }
   }
 
@@ -434,6 +464,28 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                 <Button variant="outline" size="sm" onClick={handlePostAgain}>
                   <RefreshCw className="size-3.5" />
                   Post Again
+                </Button>
+              )}
+              {canCancelGig(gig) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-(--danger-text)/30 text-(--danger-text) hover:bg-(--danger-tint)"
+                  onClick={() => setCancellingGig(gig)}
+                >
+                  <XCircle className="size-3.5" />
+                  Cancel Gig
+                </Button>
+              )}
+              {canDeleteGig(gig) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="border-(--danger-text)/30 text-(--danger-text) hover:bg-(--danger-tint)"
+                  onClick={() => setConfirmDeleteGig(true)}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
                 </Button>
               )}
               <Button
@@ -825,7 +877,12 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-muted">Required skill</span>
-                          <span className="font-medium text-ink">{gig.requiredSkills?.join(", ") || "—"}</span>
+                          <span className="flex items-center gap-1.5 font-medium text-ink">
+                            {gig.requiredSkills?.[0] && (
+                              <SkillIcon skillName={gig.requiredSkills[0]} size={14} color="#1F4D80" className="text-(--worker-text)" />
+                            )}
+                            {gig.requiredSkills?.join(", ") || "—"}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-muted">Experience level</span>
@@ -837,7 +894,12 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                       <>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-muted">Required skill</span>
-                          <span className="font-medium text-ink">{gig.skillRequired || "—"}</span>
+                          <span className="flex items-center gap-1.5 font-medium text-ink">
+                            {gig.skillRequired && (
+                              <SkillIcon skillName={gig.skillRequired} size={14} color="#4A34A6" className="text-(--offered-text)" />
+                            )}
+                            {gig.skillRequired || "—"}
+                          </span>
                         </div>
                         <div className="flex items-center justify-between gap-2">
                           <span className="text-muted">Experience level</span>
@@ -1057,6 +1119,26 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
           </AlertDialog>
 
           <AlertDialog
+            open={confirmDeleteGig}
+            onOpenChange={(open) => {
+              if (!open && !deletingGig) setConfirmDeleteGig(false);
+            }}
+          >
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Gig?</AlertDialogTitle>
+                <AlertDialogDescription>This will permanently remove the gig. This can&apos;t be undone.</AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel disabled={deletingGig}>Keep</AlertDialogCancel>
+                <Button disabled={deletingGig} onClick={handleDeleteGig} variant="destructive">
+                  {deletingGig ? "Deleting…" : "Delete"}
+                </Button>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog
             open={keepLookingOpen}
             onOpenChange={(open) => {
               if (!open && !settingKeepLooking) setKeepLookingOpen(false);
@@ -1116,6 +1198,14 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
             onOpenChange={(open) => {
               if (!open) setSavingTemplateFor(null);
             }}
+          />
+
+          <CancelGigDialog
+            gig={cancellingGig}
+            onOpenChange={(open) => {
+              if (!open) setCancellingGig(null);
+            }}
+            onCancelled={() => setCancellingGig(null)}
           />
 
           <ViewPaymentCodeDialog

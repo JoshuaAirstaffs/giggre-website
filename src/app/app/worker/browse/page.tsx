@@ -8,10 +8,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { cn, formatDate, maskEmail } from "@/lib/utils";
+import { cn, currencySymbol, formatDate, maskEmail } from "@/lib/utils";
 import { useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import {
     BadgeCheck,
@@ -22,6 +23,8 @@ import {
     Calendar,
     CalendarDays,
     Check,
+    ChevronDown,
+    ChevronUp,
     FileText,
     ImageIcon,
     Flag,
@@ -33,6 +36,7 @@ import {
     Send,
     Star,
     Tag,
+    User,
     Users,
     Wallet,
     X,
@@ -42,6 +46,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
+import SkillIcon from "@/components/SkillIcon";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
@@ -53,8 +58,9 @@ import {
     declineOfferedGig,
     fetchHostByUid,
     fetchGigFilters,
-    fetchHostIsVerified,
+    fetchHostQuickInfo,
     fetchSkillNames,
+    gigMatchesPayRange,
     gigMatchesPayType,
     gigMatchesScheduleDate,
     gigMatchesSearch,
@@ -71,6 +77,7 @@ import {
     workerHasPendingCancellation,
     type Gig,
     type HostLookupResult,
+    type HostQuickInfo,
     type PayTypeFilter,
 } from "@/lib/browse-gigs";
 
@@ -79,8 +86,44 @@ import {
 
 type SkillFilter = "all" | "mySkills" | "specific";
 const FAR_GIG_THRESHOLD_KM = 50;
-const RADIUS_OPTIONS: (number | null)[] = [null, 1, 5, 10, 50, 100]; // in the shown unit (mi / km)
+// Distance slider stops, in the shown unit (km, or mi in the US); the last
+// stop (null) is "Any" — also the steps the skills-default radius snaps to.
+const RADIUS_OPTIONS: (number | null)[] = [1, 2, 5, 10, 15, 25, 50, 75, 100, null];
 const NEAREST_FALLBACK_COUNT = 10;
+
+// Slider position for a radius in km: the closest stop (a saved value from
+// the old chip set, or a region/unit switch, may sit between stops).
+function radiusStopIndex(radiusKm: number | null, toKm: (shown: number) => number): number {
+  if (radiusKm == null) return RADIUS_OPTIONS.length - 1;
+  let best = 0;
+  let bestDiff = Infinity;
+  RADIUS_OPTIONS.forEach((r, i) => {
+    if (r === null) return;
+    const diff = Math.abs(toKm(r) - radiusKm);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = i;
+    }
+  });
+  return best;
+}
+
+// Pay-range slider stops, in the worker's own currency; the last stop means
+// "no maximum". PHP steps are peso-scaled, everything else (USD) dollar-scaled.
+function payStops(currency: string): number[] {
+  return currency === "PHP"
+    ? [0, 100, 200, 300, 500, 750, 1000, 1500, 2000, 3000, 5000, 10000]
+    : [0, 10, 15, 20, 25, 30, 40, 50, 75, 100, 200, 500];
+}
+
+function payStopIndex(amount: number | null, stops: number[], isMax: boolean): number {
+  if (amount == null) return isMax ? stops.length - 1 : 0;
+  let best = 0;
+  stops.forEach((s, i) => {
+    if (Math.abs(s - amount) < Math.abs(stops[best] - amount)) best = i;
+  });
+  return best;
+}
 // PAUSED (2026-11-09), same as the app: filters aren't saved to or loaded
 // from users/{uid}.gigFilters for now, so every visit starts on the dynamic
 // defaults. Existing saved data is left in place; set true to resume.
@@ -124,10 +167,50 @@ function matchesSkill(a: string, b: string) {
     return a.toLowerCase().trim() === b.toLowerCase().trim();
 }
 
-function AvatarHost({ hostname }: { hostname?: string }) {
+// Mirrors the gig detail sheet's host avatar in gig_map_section.dart: the
+// real photo when there is one, otherwise a generic person icon (the app
+// itself falls back to a single initial letter here, not an icon, but
+// Icons.person is its own established fallback for a missing profile photo
+// elsewhere in the app — used here instead since initials-only was the
+// thing being replaced).
+function AvatarHost({ hostname, photoUrl }: { hostname?: string; photoUrl?: string | null }) {
     return (<Avatar className="h-20 w-20 rounded-2xl after:rounded-2xl">
-        <AvatarFallback className="rounded-2xl bg-worker-tint text-2xl font-semibold text-(--worker-text)">{initialsOf(hostname)}</AvatarFallback>
+        {photoUrl && <AvatarImage src={photoUrl} alt={hostname} className="rounded-2xl" />}
+        <AvatarFallback className="rounded-2xl bg-worker-tint text-(--worker-text)">
+            <User className="size-8" />
+        </AvatarFallback>
     </Avatar>)
+}
+
+// Mirrors the gig list card's left-side "skill icon tile" in
+// gig_map_section.dart (_GigListCard) — the gig's first required skill's
+// GSIN icon (or a generic handshake icon, same as SkillIcon's own fallback),
+// tinted with the gig type's own accent color instead of a host photo. The
+// app shows no host avatar at all in this list — only the detail view does
+// (see AvatarHost above), which is unaffected by this.
+function GigSkillTile({ gigType, requiredSkills }: { gigType: Gig["gigType"]; requiredSkills: string[] }) {
+    const isOpen = gigType === "open";
+    // The lucide fallback icon tints correctly via `className` (it's inline
+    // SVG honoring currentColor and so follows dark mode); the admin's own
+    // Iconify-hosted icon is a remote image instead, tinted server-side via
+    // Iconify's `color` query param, which needs a literal color value — a
+    // light-mode-only tradeoff versus the CSS custom properties used
+    // everywhere else on this page.
+    return (
+        <div
+            className={cn(
+                "flex h-20 w-20 shrink-0 items-center justify-center rounded-2xl",
+                isOpen ? "bg-worker-tint" : "bg-(--offered-tint)"
+            )}
+        >
+            <SkillIcon
+                skillName={requiredSkills[0]}
+                size={40}
+                color={isOpen ? "#1F4D80" : "#4A34A6"}
+                className={isOpen ? "text-(--worker-text)" : "text-(--offered-text)"}
+            />
+        </div>
+    );
 }
 
 function Skills({ skills }: { skills: string[] | [] }) {
@@ -135,7 +218,10 @@ function Skills({ skills }: { skills: string[] | [] }) {
     return (
         <div className="flex flex-wrap gap-1.5">
             {skills.map((skill) => (
-                <Badge key={skill} variant="secondary">{skill}</Badge>
+                <Badge key={skill} variant="secondary" className="gap-1">
+                    <SkillIcon skillName={skill} size={12} color="#1F4D80" className="text-(--worker-text)" />
+                    {skill}
+                </Badge>
             ))}
         </div>
     )
@@ -183,6 +269,21 @@ const Browse = () => {
     // yyyy-MM-dd, or null for "Any date"
     const [scheduleDate, setScheduleDate] = useState<string | null>(null);
     const [payTypeFilter, setPayTypeFilter] = useState<PayTypeFilter>("all");
+    // Pay range, on the gig's shown rate (hourly rate for hourly gigs, else
+    // the budget), in the worker's own currency — null bound = no limit on
+    // that side. A gig in a different currency is hidden once a range is
+    // set, same as the app (never converted).
+    const [payMin, setPayMin] = useState<number | null>(null);
+    const [payMax, setPayMax] = useState<number | null>(null);
+    const payCurrency = profile?.currencyCode === "PHP" ? "PHP" : "USD";
+    // "desc" (newest post on top) is the default — not part of changeFilters/
+    // Reset, since it's a display order rather than a filter that narrows
+    // results.
+    const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+    // Collapsed by default — the full grouped panel is tall, so once a
+    // worker has their filters set the way they want, hide it and just
+    // show what's active as a one-line summary instead.
+    const [filtersOpen, setFiltersOpen] = useState(false);
 
     const [viewingHostId, setViewingHostId] = useState<string | null>(null);
     const [hostProfile, setHostProfile] = useState<HostLookupResult | null>(null);
@@ -190,8 +291,9 @@ const Browse = () => {
     // Keyed by hostId so repeatedly selecting gigs from the same host (common
     // when one host posts several) doesn't refetch — separate from
     // hostProfile above since that's only populated once the full profile
-    // drawer is opened, but the gig details panel needs this immediately.
-    const [hostVerifiedById, setHostVerifiedById] = useState<Map<string, boolean>>(new Map());
+    // drawer is opened, but the gig details panel needs this immediately
+    // (verification badge + avatar photo).
+    const [hostInfoById, setHostInfoById] = useState<Map<string, HostQuickInfo>>(new Map());
     const [blockedHostIds, setBlockedHostIds] = useState<Set<string>>(new Set());
     const [blocking, setBlocking] = useState(false);
 
@@ -403,33 +505,41 @@ const Browse = () => {
         [scheduleFiltered, payTypeFilter]
     );
 
+    const payRangeFiltered = useMemo(
+        () => payTypeFiltered.filter((g) => gigMatchesPayRange(g, payMin, payMax, payCurrency)),
+        [payTypeFiltered, payMin, payMax, payCurrency]
+    );
+
     // Mirrors gig_map_section.dart's _filteredGigs: distance is applied last
     // so that when nothing is inside the worker's radius, it can fall back
     // to the nearest NEAREST_FALLBACK_COUNT gigs that match every other
     // filter, instead of showing an empty list.
     const { radiusFiltered, nearestFallbackKm } = useMemo(() => {
-        if (radiusKm == null || !myLocation) return { radiusFiltered: payTypeFiltered, nearestFallbackKm: null as number | null };
-        const inside = payTypeFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
-        if (inside.length > 0 || payTypeFiltered.length === 0) {
+        if (radiusKm == null || !myLocation) return { radiusFiltered: payRangeFiltered, nearestFallbackKm: null as number | null };
+        const inside = payRangeFiltered.filter((g) => g.location && haversineKm(myLocation, g.location) <= radiusKm);
+        if (inside.length > 0 || payRangeFiltered.length === 0) {
             return { radiusFiltered: inside, nearestFallbackKm: null as number | null };
         }
-        const byDistance = payTypeFiltered
+        const byDistance = payRangeFiltered
             .filter((g): g is typeof g & { location: NonNullable<typeof g.location> } => !!g.location)
             .map((g) => ({ gig: g, km: haversineKm(myLocation, g.location) }))
             .sort((a, b) => a.km - b.km);
         const nearest = byDistance.slice(0, NEAREST_FALLBACK_COUNT);
         return { radiusFiltered: nearest.map((n) => n.gig), nearestFallbackKm: nearest[0]?.km ?? null };
-    }, [payTypeFiltered, radiusKm, myLocation]);
+    }, [payRangeFiltered, radiusKm, myLocation]);
 
     // A typed search looks past the radius, so searching another city or
-    // ZIP finds its gigs (same as the app) — schedule/pay type still apply.
+    // ZIP finds its gigs (same as the app) — schedule/pay type/pay range still apply.
     const queryWords = useMemo(() => searchWords(searchTerm), [searchTerm]);
     const searching = queryWords.length > 0;
     const searchIgnoresRadius = searching && radiusKm != null && myLocation != null;
     const filteredGigs = useMemo(() => {
-        if (queryWords.length === 0) return radiusFiltered;
-        return payTypeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
-    }, [radiusFiltered, payTypeFiltered, queryWords]);
+        const base = queryWords.length === 0 ? radiusFiltered : payRangeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
+        return [...base].sort((a, b) => {
+            const diff = (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0);
+            return sortOrder === "asc" ? diff : -diff;
+        });
+    }, [radiusFiltered, payRangeFiltered, queryWords, sortOrder]);
 
     useEffect(() => {
         // Defaults the detail pane to the first result whenever filters/search
@@ -444,16 +554,16 @@ const Browse = () => {
 
     useEffect(() => {
         const hostId = selectedGig?.hostId;
-        if (!hostId || hostVerifiedById.has(hostId)) return;
+        if (!hostId || hostInfoById.has(hostId)) return;
         let cancelled = false;
-        fetchHostIsVerified(hostId)
-            .then((isVerified) => {
+        fetchHostQuickInfo(hostId)
+            .then((info) => {
                 if (cancelled) return;
-                setHostVerifiedById((prev) => new Map(prev).set(hostId, isVerified));
+                setHostInfoById((prev) => new Map(prev).set(hostId, info));
             })
-            .catch((err) => console.error("Failed to check host verification status:", err));
+            .catch((err) => console.error("Failed to load host info:", err));
         return () => { cancelled = true; };
-    }, [selectedGig?.hostId, hostVerifiedById]);
+    }, [selectedGig?.hostId, hostInfoById]);
 
     function hasApplied(gig: Gig) {
         return !!uid && gig.applicants.some((a) => a.workerId === uid);
@@ -628,6 +738,36 @@ const Browse = () => {
         }
     }
 
+    // Derived once per render for the Pay Range slider's label/stops — cheap
+    // (fixed 12-entry arrays), no memo needed.
+    const payRangeStops = payStops(payCurrency);
+    const payRangeLast = payRangeStops.length - 1;
+    const payRangeLo = payStopIndex(payMin, payRangeStops, false);
+    const payRangeHi = payStopIndex(payMax, payRangeStops, true);
+    const money = (v: number) => `${currencySymbol(payCurrency)}${v}`;
+    const payRangeLabel =
+        payRangeLo === 0 && payRangeHi === payRangeLast
+            ? "Any pay"
+            : payRangeHi === payRangeLast
+              ? `${money(payRangeStops[payRangeLo])} and up`
+              : payRangeLo === 0
+                ? `Up to ${money(payRangeStops[payRangeHi])}`
+                : `${money(payRangeStops[payRangeLo])} – ${money(payRangeStops[payRangeHi])}`;
+
+    // What shows in the collapsed summary — only the filters that differ
+    // from their default, so "no filters set" reads as empty, not a wall
+    // of "All"/"Any" chips.
+    const hasActiveFilters =
+        skillFilter !== "all" || radius !== null || scheduleDate !== null || payTypeFilter !== "all" || payMin != null || payMax != null;
+    const activeFilterLabels: string[] = [
+        skillFilter === "all" ? "All Gigs" : skillFilter === "mySkills" ? "Matches My Skills" : specificSkill ?? "Specific Skill",
+        radius === null ? "Any distance" : `Within ${radius} ${units.unit}`,
+        scheduleDate ? formatScheduleShort(new Date(`${scheduleDate}T00:00:00`)) : "Any schedule",
+        payTypeFilter === "all" ? "All pay types" : payTypeFilter === "hourly" ? "Hourly" : "Day",
+        payRangeLabel,
+        sortOrder === "desc" ? "Newest first" : "Oldest first",
+    ];
+
     return (
         <>
         {limitDialog}
@@ -647,128 +787,230 @@ const Browse = () => {
                         <Button className="bg-worker text-white hover:bg-(--worker-end)">Search</Button>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-end gap-3">
-                        <div className="flex flex-col gap-1">
-                            <Label className="text-xs text-muted">Skills</Label>
-                            <Select value={skillFilter} onValueChange={(v) => changeFilters(() => setSkillFilter((v ?? "mySkills") as SkillFilter))}>
-                                <SelectTrigger size="sm">
-                                    <SelectValue>
-                                        {skillFilter === "all" ? "All Gigs" : skillFilter === "mySkills" ? "Matches My Skills" : specificSkill ?? "Specific Skill"}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All Gigs</SelectItem>
-                                    <SelectItem value="mySkills">Matches My Skills</SelectItem>
-                                    <SelectItem value="specific">Specific Skill</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        {skillFilter === "specific" && (
+                    {/* Grouped the same way as the app's filter sheet (Gigs →
+                        Where & when → Pay → Order & display) — Reset sits
+                        above the groups, mirroring its own header-level
+                        placement there rather than being just another control.
+                        Collapsed by default: the full panel is tall, so when
+                        it's hidden the active filters show as a text summary
+                        instead. */}
+                    <div className="mt-3 flex items-center justify-between gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setFiltersOpen((v) => !v)}
+                            className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold text-ink"
+                        >
+                            {filtersOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                            Filters
+                        </button>
+                        {!filtersOpen && (
+                            <p className="flex-1 truncate text-xs text-muted">
+                                {activeFilterLabels.join(" • ")}
+                            </p>
+                        )}
+                        {hasActiveFilters && (
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-muted"
+                                onClick={() =>
+                                    changeFilters(() => {
+                                        setSkillFilter("all");
+                                        setSpecificSkill(null);
+                                        setRadius(null);
+                                        setScheduleDate(null);
+                                        setPayTypeFilter("all");
+                                        setPayMin(null);
+                                        setPayMax(null);
+                                    })
+                                }
+                            >
+                                Reset
+                            </Button>
+                        )}
+                    </div>
+
+                    {filtersOpen && (
+                    <>
+                    <div className="mt-2 space-y-1.5">
+                        <p className="text-xs font-bold text-ink">Gigs</p>
+                        <div className="flex flex-wrap items-start gap-3">
                             <div className="flex flex-col gap-1">
-                                <Label className="text-xs text-muted">Which skill</Label>
-                                <Select value={specificSkill ?? undefined} onValueChange={(v) => changeFilters(() => setSpecificSkill(v))}>
+                                <Label className="text-xs text-muted">Skills</Label>
+                                <Select value={skillFilter} onValueChange={(v) => changeFilters(() => setSkillFilter((v ?? "mySkills") as SkillFilter))}>
                                     <SelectTrigger size="sm">
-                                        <SelectValue>{specificSkill ?? "Choose a skill"}</SelectValue>
+                                        <SelectValue>
+                                            {skillFilter === "all" ? "All Gigs" : skillFilter === "mySkills" ? "Matches My Skills" : specificSkill ?? "Specific Skill"}
+                                        </SelectValue>
                                     </SelectTrigger>
                                     <SelectContent>
-                                        {allSkillNames.map((name) => (
-                                            <SelectItem key={name} value={name}>{name}</SelectItem>
-                                        ))}
+                                        <SelectItem value="all">All Gigs</SelectItem>
+                                        <SelectItem value="mySkills">Matches My Skills</SelectItem>
+                                        <SelectItem value="specific">Specific Skill</SelectItem>
                                     </SelectContent>
                                 </Select>
                             </div>
-                        )}
-                        <div className="flex flex-col gap-1">
-                            <Label className="text-xs text-muted">Radius</Label>
-                            <Select
-                                value={radius === null ? "none" : String(radius)}
-                                onValueChange={(v) => changeFilters(() => setRadius(v === "none" || v === null ? null : Number(v)))}
-                            >
-                                <SelectTrigger size="sm">
-                                    <SelectValue>{radius === null ? "Any" : `${radius} ${units.unit}`}</SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {RADIUS_OPTIONS.map((r) => (
-                                        <SelectItem key={r ?? "none"} value={r === null ? "none" : String(r)}>
-                                            {r === null ? "Any" : `${r} ${units.unit}`}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
+                            {skillFilter === "specific" && (
+                                <div className="flex flex-col gap-1">
+                                    <Label className="text-xs text-muted">Which skill</Label>
+                                    <Select value={specificSkill ?? undefined} onValueChange={(v) => changeFilters(() => setSpecificSkill(v))}>
+                                        <SelectTrigger size="sm">
+                                            <SelectValue>{specificSkill ?? "Choose a skill"}</SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {allSkillNames.map((name) => (
+                                                <SelectItem key={name} value={name}>{name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                            )}
                         </div>
-                        <div className="flex flex-col gap-1">
-                            <Label className="text-xs text-muted">Schedule</Label>
-                            <div className="flex items-center gap-1">
-                                <button
-                                    type="button"
-                                    onClick={() => changeFilters(() => setScheduleDate(null))}
-                                    className={cn(
-                                        "flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-sm",
-                                        scheduleDate === null
-                                            ? "border-worker bg-worker-tint font-medium text-(--worker-text)"
-                                            : "border-input text-muted-foreground hover:bg-accent"
-                                    )}
-                                >
-                                    Any
-                                </button>
-                                <Input
-                                    type="date"
-                                    className="h-8 w-[9.5rem] text-sm"
-                                    value={scheduleDate ?? ""}
-                                    min={todayLocalDateString()}
-                                    onChange={(e) => changeFilters(() => setScheduleDate(e.target.value || null))}
+                    </div>
+
+                    <Separator className="my-3" />
+
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-ink">Where &amp; when</p>
+                        <div className="flex flex-wrap items-start gap-12">
+                            <div className="flex w-56 flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs text-muted">Distance</Label>
+                                    <span className="text-xs font-semibold text-(--quick-text)">
+                                        {radius === null ? "Any distance" : `Within ${radius} ${units.unit}`}
+                                    </span>
+                                </div>
+                                <Slider
+                                    value={radiusStopIndex(radiusKm, units.toKm)}
+                                    min={0}
+                                    max={RADIUS_OPTIONS.length - 1}
+                                    step={1}
+                                    onValueChange={(v) => {
+                                        const i = Array.isArray(v) ? v[0] : v;
+                                        changeFilters(() => setRadius(RADIUS_OPTIONS[i]));
+                                    }}
                                 />
-                                {scheduleDate && (
-                                    <Button
+                                <div className="flex justify-between text-[11px] text-muted">
+                                    <span>{RADIUS_OPTIONS[0]} {units.unit}</span>
+                                    <span>Any</span>
+                                </div>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <Label className="text-xs text-muted">Schedule</Label>
+                                <div className="flex items-center gap-1">
+                                    <button
                                         type="button"
-                                        variant="ghost"
-                                        size="icon-sm"
-                                        aria-label="Clear schedule filter"
                                         onClick={() => changeFilters(() => setScheduleDate(null))}
+                                        className={cn(
+                                            "flex h-8 shrink-0 items-center rounded-lg border px-2.5 text-sm",
+                                            scheduleDate === null
+                                                ? "border-worker bg-worker-tint font-medium text-(--worker-text)"
+                                                : "border-input text-muted-foreground hover:bg-accent"
+                                        )}
                                     >
-                                        <X className="size-3.5" />
-                                    </Button>
-                                )}
+                                        Any
+                                    </button>
+                                    <Input
+                                        type="date"
+                                        className="h-8 w-[9.5rem] text-sm"
+                                        value={scheduleDate ?? ""}
+                                        min={todayLocalDateString()}
+                                        onChange={(e) => changeFilters(() => setScheduleDate(e.target.value || null))}
+                                    />
+                                    {scheduleDate && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label="Clear schedule filter"
+                                            onClick={() => changeFilters(() => setScheduleDate(null))}
+                                        >
+                                            <X className="size-3.5" />
+                                        </Button>
+                                    )}
+                                </div>
                             </div>
                         </div>
-                        <div className="flex flex-col gap-1">
-                            <Label className="text-xs text-muted">Pay Type</Label>
-                            <Select value={payTypeFilter} onValueChange={(v) => changeFilters(() => setPayTypeFilter((v ?? "all") as PayTypeFilter))}>
-                                <SelectTrigger size="sm">
-                                    <SelectValue>
-                                        {payTypeFilter === "all" ? "All" : payTypeFilter === "hourly" ? "Hourly" : "Day"}
-                                    </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="all">All</SelectItem>
-                                    <SelectItem value="hourly">Hourly</SelectItem>
-                                    <SelectItem value="flat">Day</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted"
-                            onClick={() =>
-                                changeFilters(() => {
-                                    setSkillFilter("all");
-                                    setSpecificSkill(null);
-                                    setRadius(null);
-                                    setScheduleDate(null);
-                                    setPayTypeFilter("all");
-                                })
-                            }
-                        >
-                            Reset
-                        </Button>
+                        {radiusKm != null && myLocation != null && (
+                            <p className="text-xs text-muted">If nothing is within this distance, the nearest gigs are shown instead.</p>
+                        )}
+                        {radiusKm != null && myLocation == null && (
+                            <p className="text-xs text-muted">Your location isn&apos;t available yet — distance filter will apply once located.</p>
+                        )}
                     </div>
-                    {radiusKm != null && myLocation != null && (
-                        <p className="mt-1 text-xs text-muted">If nothing is within this distance, the nearest gigs are shown instead.</p>
-                    )}
-                    {radiusKm != null && myLocation == null && (
-                        <p className="mt-1 text-xs text-muted">Your location isn&apos;t available yet — distance filter will apply once located.</p>
+
+                    <Separator className="my-3" />
+
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-ink">Pay</p>
+                        <div className="flex flex-wrap items-start gap-12">
+                            <div className="flex flex-col gap-1">
+                                <Label className="text-xs text-muted">Pay Type</Label>
+                                <Select value={payTypeFilter} onValueChange={(v) => changeFilters(() => setPayTypeFilter((v ?? "all") as PayTypeFilter))}>
+                                    <SelectTrigger size="sm">
+                                        <SelectValue>
+                                            {payTypeFilter === "all" ? "All" : payTypeFilter === "hourly" ? "Hourly" : "Day"}
+                                        </SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="all">All</SelectItem>
+                                        <SelectItem value="hourly">Hourly</SelectItem>
+                                        <SelectItem value="flat">Day</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                            <div className="flex w-56 flex-col gap-1">
+                                <div className="flex items-center justify-between">
+                                    <Label className="text-xs text-muted">Pay range</Label>
+                                    <span className="text-xs font-semibold text-(--quick-text)">{payRangeLabel}</span>
+                                </div>
+                                <Slider
+                                    value={[payRangeLo, payRangeHi]}
+                                    min={0}
+                                    max={payRangeLast}
+                                    step={1}
+                                    onValueChange={(v) => {
+                                        const [a, b] = Array.isArray(v) ? v : [v, v];
+                                        changeFilters(() => {
+                                            setPayMin(a === 0 ? null : payRangeStops[a]);
+                                            setPayMax(b === payRangeLast ? null : payRangeStops[b]);
+                                        });
+                                    }}
+                                />
+                                <div className="flex justify-between text-[11px] text-muted">
+                                    <span>{money(payRangeStops[0])}</span>
+                                    <span>{money(payRangeStops[payRangeLast])}+</span>
+                                </div>
+                            </div>
+                        </div>
+                        {(payMin != null || payMax != null) && (
+                            <p className="text-[11px] text-muted">
+                                Compares the hourly rate for hourly gigs and the day rate for day gigs.
+                            </p>
+                        )}
+                    </div>
+
+                    <Separator className="my-3" />
+
+                    <div className="space-y-1.5">
+                        <p className="text-xs font-bold text-ink">Order &amp; display</p>
+                        <div className="flex flex-wrap items-start gap-3">
+                            <div className="flex flex-col gap-1">
+                                <Label className="text-xs text-muted">Sort</Label>
+                                <Select value={sortOrder} onValueChange={(v) => setSortOrder((v ?? "desc") as "desc" | "asc")}>
+                                    <SelectTrigger size="sm">
+                                        <SelectValue>{sortOrder === "desc" ? "Newest first" : "Oldest first"}</SelectValue>
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="desc">Newest first</SelectItem>
+                                        <SelectItem value="asc">Oldest first</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
+                        </div>
+                    </div>
+                    </>
                     )}
 
                     <p className="mt-2 text-sm text-muted">
@@ -817,7 +1059,7 @@ const Browse = () => {
                                     gig.id === selectedId ? "border-worker bg-worker-tint" : "border-hairline bg-sidebar hover:bg-mist"
                                 )}
                             >
-                                <AvatarHost hostname={gig.hostName} />
+                                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} />
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
@@ -873,7 +1115,7 @@ const Browse = () => {
                         <div className="flex h-full min-h-0 flex-col overflow-y-auto rounded-lg border border-hairline bg-sidebar p-6 shadow-sm">
                             <div className="flex items-start justify-between gap-2">
                                 <div className="flex items-start gap-4">
-                                    <AvatarHost hostname={selectedGig.hostName} />
+                                    <AvatarHost hostname={selectedGig.hostName} photoUrl={hostInfoById.get(selectedGig.hostId)?.photoUrl} />
                                     <div className="min-w-0">
                                         <div className="font-display text-xl font-semibold text-ink">{selectedGig.title}</div>
                                         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
@@ -883,7 +1125,7 @@ const Browse = () => {
                                                 className="inline-flex items-center gap-1 font-medium hover:cursor-pointer text-ink underline-offset-2 hover:underline"
                                             >
                                                 {selectedGig.hostName}
-                                                {hostVerifiedById.get(selectedGig.hostId) && (
+                                                {hostInfoById.get(selectedGig.hostId)?.isVerified && (
                                                     <BadgeCheck className="size-3.5 shrink-0 fill-blue-500 text-white" />
                                                 )}
                                             </button>

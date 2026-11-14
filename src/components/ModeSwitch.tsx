@@ -16,7 +16,7 @@ export function ModeSwitch({ role }: { role: "host" | "worker" }) {
   ] as const
 
   return (
-    <nav aria-label="Mode" className="flex gap-1 rounded-full bg-muted p-1">
+    <nav aria-label="Mode" className="flex gap-1 rounded-full bg-muted/15 p-1">
       {segments.map(({ key, label, href, Icon, active }) => {
         const current = role === key
         const cls = cn(

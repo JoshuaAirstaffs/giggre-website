@@ -4,6 +4,7 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   deleteField,
   doc,
   getDoc,
@@ -14,6 +15,7 @@ import {
   serverTimestamp,
   updateDoc,
   where,
+  writeBatch,
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -867,6 +869,98 @@ export function canEditGig(gig: HostGigDetail): boolean {
   if (gig.gigType === "open") return gig.status === "open" && !gig.slotsClosed && gig.applicantCount === 0;
   if (gig.gigType === "offered") return gig.status === "offered";
   return false;
+}
+
+// Mirrors gig_detail_sheet.dart's showCancelGig exactly — only Open/Offered
+// (Quick gigs run through a different, matching-engine-driven lifecycle not
+// covered here). Hidden once there's nothing left to cancel (already
+// cancelled/completed/no_worker) or a cancellation request is already
+// pending admin review.
+const CANCEL_BLOCKED_GIG_STATUSES = new Set([
+  "completed",
+  "cancelled",
+  "no_worker",
+  "task_complete",
+  "payment",
+  "cancellation_requested",
+]);
+
+export function canCancelGig(gig: HostGigDetail): boolean {
+  if (gig.gigType !== "open" && gig.gigType !== "offered") return false;
+  return !CANCEL_BLOCKED_GIG_STATUSES.has(gig.status);
+}
+
+// Slot statuses a host can request cancellation for — same as
+// kHostCancellableSlotStatuses in cancellation_request.dart (every "active"
+// status minus 'cancellation_requested', since one would already be pending).
+const HOST_CANCELLABLE_SLOT_STATUSES = ["navigating", "arrived", "working", "task_complete", "payment"];
+
+function hostCancellationRequestUpdate(reason: string, lastProgressStatus: string) {
+  return {
+    cancellation_reason: arrayUnion({ reason, approved: null, requestedBy: "host" }),
+    lastProgressStatus,
+    cancellationRequestedAt: serverTimestamp(),
+    status: "cancellation_requested",
+  };
+}
+
+// Mirrors _requestCancellation in gig_detail_sheet.dart. An Open gig with no
+// worker assigned yet has nothing for admin to adjudicate between host and
+// worker, so it cancels immediately instead; an Offered gig always has an
+// invited worker from the moment it's created (even before they've
+// accepted), so it always goes through admin review — this asymmetry is
+// deliberate, not a gap. On a multi-worker gig, every active slot gets its
+// own request (so each worker's own listener sees it, same as the app) in
+// the same batch as the gig doc's.
+export async function cancelGig(gig: HostGigDetail, reason: string): Promise<ActionResult> {
+  try {
+    const gigRef = doc(db, HOST_GIG_COLLECTIONS[gig.gigType], gig.id);
+    const immediate = gig.gigType === "open" && gig.workers.length === 0;
+
+    if (immediate) {
+      await updateDoc(gigRef, {
+        cancellation_reason: arrayUnion({ reason, approved: true, requestedBy: "host" }),
+        cancelledAt: serverTimestamp(),
+        status: "cancelled",
+      });
+      return { ok: true };
+    }
+
+    const batch = writeBatch(db);
+    const slotsSnap = await getDocs(
+      query(
+        collection(db, HOST_GIG_COLLECTIONS[gig.gigType], gig.id, "workers"),
+        where("status", "in", HOST_CANCELLABLE_SLOT_STATUSES)
+      )
+    );
+    for (const d of slotsSnap.docs) {
+      batch.update(d.ref, hostCancellationRequestUpdate(reason, (d.data().status as string | undefined) ?? "working"));
+    }
+    batch.update(gigRef, hostCancellationRequestUpdate(reason, gig.status));
+    await batch.commit();
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't cancel this gig." };
+  }
+}
+
+// Narrower on purpose than host_gig_card.dart's own delete condition (shown
+// for any non-active gig: open/cancelled/completed/no_worker/etc.) — here
+// only once a gig is actually cancelled, a deliberately more conservative
+// bar for a permanent, unrecoverable action.
+export function canDeleteGig(gig: HostGigDetail): boolean {
+  return gig.status === "cancelled";
+}
+
+// Mirrors _confirmDelete in host_gig_card.dart — a plain doc delete, no
+// special cleanup (a cancelled gig has nothing left running to clean up).
+export async function deleteGig(gig: HostGigDetail): Promise<ActionResult> {
+  try {
+    await deleteDoc(doc(db, HOST_GIG_COLLECTIONS[gig.gigType], gig.id));
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Couldn't delete this gig." };
+  }
 }
 
 export type CashPaymentResult = { ok: true; paymentCode: string } | { ok: false; reason: string };
