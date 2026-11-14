@@ -13,6 +13,8 @@ import { startAutoSearch } from "@/lib/quick-gig-matching";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
 import { TaskTypeSelect } from "./TaskTypeSelect";
+import { GigPhotosInput } from "./GigPhotosInput";
+import { uploadGigImages } from "@/lib/gig-images";
 
 // Statuses quick_gig_matching_service.dart can still be actively working
 // through — the gig may bounce back to "scanning" more than once (e.g. a
@@ -84,6 +86,8 @@ export default function QuickGigForm() {
   // Unverified earning limit (same check as the app before posting).
   const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
   const [submitting, setSubmitting] = useState(false);
+  // Gig photos (optional, up to 5) — uploaded when the gig is posted.
+  const [photos, setPhotos] = useState<File[]>([]);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
   // GSIN task type — the picker only shows once the admin has set up task types.
   const [taskTypeId, setTaskTypeId] = useState("");
@@ -242,8 +246,20 @@ export default function QuickGigForm() {
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
+      // Photos first, so a gig is never posted with some of them missing.
+      let images: string[] = [];
+      if (photos.length) {
+        try {
+          images = await uploadGigImages(authUser.uid, photos);
+        } catch (err) {
+          console.error("Gig photo upload failed:", err);
+          toast.error("Couldn't upload the photos. Check your connection and try again.");
+          return;
+        }
+      }
       const gigId = await postQuickGig({
         hostId: authUser.uid,
+        images,
         hostName: profile?.name ?? "",
         title: fields.title.trim(),
         description: fields.description.trim(),
@@ -269,6 +285,7 @@ export default function QuickGigForm() {
       );
       watchQuickGigSearch(gigId, fields.title.trim(), Number(fields.workerSlots));
       reset();
+      setPhotos([]);
       setTaskTypeId("");
     } catch (err) {
       console.error("Failed to post quick gig:", err);
@@ -288,6 +305,7 @@ export default function QuickGigForm() {
         <div className="space-y-4">
           <CommonGigDetails fields={fields} setField={setField} currencyCode={currencyCode} />
           <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} onAvailable={setHasTaskTypes} />
+          <GigPhotosInput files={photos} onChange={setPhotos} />
         </div>
         <CommonGigSchedule
           fields={fields}

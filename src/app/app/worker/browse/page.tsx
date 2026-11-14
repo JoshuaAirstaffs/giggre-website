@@ -23,6 +23,7 @@ import {
     CalendarDays,
     Check,
     FileText,
+    ImageIcon,
     Flag,
     Hourglass,
     Loader2,
@@ -39,6 +40,7 @@ import {
 import { toast } from "sonner";
 import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
+import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
@@ -1000,6 +1002,16 @@ const Browse = () => {
                                                     Missing {missingSkills(selectedGig).length === 1 ? "skill" : "skills"}: {missingSkills(selectedGig).join(", ")}
                                                 </p>
                                             )}
+                                        </div>
+                                    </>
+                                )}
+
+                                {selectedGig.images.length > 0 && (
+                                    <>
+                                        <Separator />
+                                        <div className="space-y-2">
+                                            <SectionLabel icon={ImageIcon}>Photos</SectionLabel>
+                                            <GigPhotos urls={selectedGig.images} />
                                         </div>
                                     </>
                                 )}

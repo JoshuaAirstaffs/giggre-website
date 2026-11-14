@@ -276,6 +276,8 @@ export interface HostGigCancellation {
 export interface HostGigDetail extends HostGig {
   hostName: string;
   description: string;
+  /** Photos attached when posting (download URLs). */
+  images: string[];
   location: { lat: number; lng: number } | null;
   ratePerSlot: number;
   slotsCompleted: number;
@@ -555,6 +557,7 @@ async function buildHostGigDetail(
     filledSlotCount,
     hostName: (data.hostName as string) ?? "",
     description: (data.description as string) ?? "",
+    images: Array.isArray(data.images) ? (data.images as unknown[]).filter((u): u is string => typeof u === "string") : [],
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : null,
     ratePerSlot: (data.ratePerSlot as number | undefined) ?? (data.budget as number | undefined) ?? 0,
     slotsCompleted,

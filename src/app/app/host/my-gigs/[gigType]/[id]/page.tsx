@@ -1,5 +1,6 @@
 "use client";
 
+import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -805,6 +806,7 @@ export default function HostGigDetailPage({ params }: { params: Promise<{ gigTyp
                 </CardHeader>
                 <CardContent className="mt-3 space-y-3 p-0">
                   <p className="text-sm text-ink">{gig.description || "No description provided."}</p>
+                  {gig.images.length > 0 && <GigPhotos urls={gig.images} size="sm" />}
                   <Separator />
                   <div className="space-y-2 text-sm">
                     {gig.gigType === "quick" && (

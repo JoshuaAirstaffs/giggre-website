@@ -2,6 +2,8 @@
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
+import { GigPhotosInput } from "./GigPhotosInput";
+import { uploadGigImages } from "@/lib/gig-images";
 import { SkillSelect, isCustomSkill } from "./SkillSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -73,6 +75,8 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
     preselectedWorker ? [preselectedWorker] : []
   );
   const [submitting, setSubmitting] = useState(false);
+  // Gig photos (optional, up to 5) — uploaded when the gig is posted.
+  const [photos, setPhotos] = useState<File[]>([]);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -199,6 +203,17 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, recipientCount), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
+      // Photos first, so a gig is never posted with some of them missing.
+      let images: string[] = [];
+      if (!editGig && photos.length) {
+        try {
+          images = await uploadGigImages(authUser.uid, photos);
+        } catch (err) {
+          console.error("Gig photo upload failed:", err);
+          toast.error("Couldn't upload the photos. Check your connection and try again.");
+          return;
+        }
+      }
       const input = {
         hostId: authUser.uid,
         hostName: profile?.name ?? "",
@@ -222,7 +237,7 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
         router.push(`/app/host/my-gigs/offered/${editGig.gigId}`);
         return;
       }
-      const gigId = await postOfferedGig({ ...input, workers: selectedWorkers });
+      const gigId = await postOfferedGig({ ...input, workers: selectedWorkers, images });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
@@ -230,6 +245,7 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
       setTaskTypeId("");
       setExperienceLevel("entry");
       setSelectedWorkers([]);
+      setPhotos([]);
     } catch (err) {
       console.error(editGig ? "Failed to update offered gig:" : "Failed to post offered gig:", err);
       toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post the gig. Please try again.");
@@ -386,6 +402,8 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
           <SkillSelect value={skillRequired} onChange={setSkillRequired} skills={skills} />
 
           <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} disabled={!!editGig} />
+
+          {!editGig && <GigPhotosInput files={photos} onChange={setPhotos} />}
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>

@@ -58,6 +58,8 @@ export interface Gig {
   requiredSkills: string[];
   /** Skill typed under "Other" (not in the library) — shown to every worker. */
   customSkill: boolean;
+  /** Photos the host attached when posting (download URLs, up to 5). */
+  images: string[];
   applicants: ApplicantEntry[];
   applicantCount: number;
   scheduledDate: Date | null;
@@ -257,6 +259,7 @@ function toGig(id: string, data: Record<string, unknown>, gigType: GigType): Gig
     experienceLevel: (data.experienceLevel as string) ?? "",
     requiredSkills: (data.requiredSkills as string[] | undefined) ?? [],
     customSkill: data.customSkill === true,
+    images: Array.isArray(data.images) ? (data.images as unknown[]).filter((u): u is string => typeof u === "string") : [],
     applicants,
     applicantCount: gigType === "open" ? applicants.length : 0,
     scheduledDate: (data.scheduledDate as Timestamp | undefined)?.toDate() ?? null,

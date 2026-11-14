@@ -3,7 +3,7 @@
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { toast } from "sonner";
-import { Bookmark, Briefcase, Calendar, FileText, Hourglass, MapIcon, Send, Tag, Users, Wallet } from "lucide-react";
+import { Bookmark, Briefcase, Calendar, FileText, Hourglass, ImageIcon, MapIcon, Send, Tag, Users, Wallet } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -15,6 +15,7 @@ import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetT
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
+import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
@@ -481,6 +482,16 @@ export default function SavedGigsPage() {
                       </div>
                     </div>
                   </>
+                )}
+
+                {viewingGig.images.length > 0 && (
+                    <>
+                        <Separator />
+                        <div className="space-y-2">
+                            <SectionLabel icon={ImageIcon}>Photos</SectionLabel>
+                            <GigPhotos urls={viewingGig.images} />
+                        </div>
+                    </>
                 )}
 
                 {viewingGig.description && (

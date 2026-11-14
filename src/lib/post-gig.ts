@@ -44,6 +44,7 @@ export type PayType = "flat" | "hourly";
 export interface CommonGigInput {
   taskTypeId?: string; // GSIN task type (admin catalog)
   customSkill?: boolean; // skill typed under "Other" (not in the skills library)
+  images?: string[]; // gig photos (download URLs, up to 5 — lib/gig-images.ts)
   hostId: string;
   hostName: string;
   title: string;
@@ -96,6 +97,7 @@ function commonGigFields(input: CommonGigInput) {
     // GSIN task type → a Cloud Function adds the gig's GSINS/GSKU codes.
     ...(input.taskTypeId ? { taskTypeId: input.taskTypeId } : {}),
     ...(input.customSkill ? { customSkill: true } : {}),
+    ...(input.images?.length ? { images: input.images } : {}),
   };
 }
 

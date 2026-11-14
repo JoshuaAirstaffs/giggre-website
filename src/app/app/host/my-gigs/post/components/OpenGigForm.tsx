@@ -2,6 +2,8 @@
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { TaskTypeSelect } from "./TaskTypeSelect";
+import { GigPhotosInput } from "./GigPhotosInput";
+import { uploadGigImages } from "@/lib/gig-images";
 import { SkillSelect, isCustomSkill } from "./SkillSelect";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -52,6 +54,8 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editGig?.experienceLevel ?? "entry");
   const [submitting, setSubmitting] = useState(false);
+  // Gig photos (optional, up to 5) — uploaded when the gig is posted.
+  const [photos, setPhotos] = useState<File[]>([]);
   const [lastGigId, setLastGigId] = useState<string | null>(null);
 
   // Seeds every field from the gig being edited — the parent page keys this
@@ -112,6 +116,17 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
     setSubmitting(true);
     try {
+      // Photos first, so a gig is never posted with some of them missing.
+      let images: string[] = [];
+      if (!editGig && photos.length) {
+        try {
+          images = await uploadGigImages(authUser.uid, photos);
+        } catch (err) {
+          console.error("Gig photo upload failed:", err);
+          toast.error("Couldn't upload the photos. Check your connection and try again.");
+          return;
+        }
+      }
       const input = {
         hostId: authUser.uid,
         hostName: profile?.name ?? "",
@@ -136,10 +151,11 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
         router.push(`/app/host/my-gigs/open/${editGig.gigId}`);
         return;
       }
-      const gigId = await postOpenGig(input);
+      const gigId = await postOpenGig({ ...input, images });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
       reset();
+      setPhotos([]);
       setRequiredSkill("");
       setTaskTypeId("");
       setExperienceLevel("entry");
@@ -164,6 +180,7 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
           <SkillSelect value={requiredSkill} onChange={setRequiredSkill} skills={skills} />
 
           <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} disabled={!!editGig} />
+          {!editGig && <GigPhotosInput files={photos} onChange={setPhotos} />}
 
           <div className="space-y-1.5">
             <Label>Experience level</Label>
