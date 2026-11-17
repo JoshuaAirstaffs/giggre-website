@@ -182,14 +182,97 @@ function AvatarHost({ hostname, photoUrl }: { hostname?: string; photoUrl?: stri
     </Avatar>)
 }
 
+// List order, same options as the app (gig_map_section.dart _GigSort).
+type GigSort = "newest" | "nearest" | "offers" | "payHigh" | "payLow" | "startingSoon" | "fewestApplicants" | "oldest";
+const GIG_SORT_LABELS: Record<GigSort, string> = {
+    newest: "Newest",
+    nearest: "Nearest",
+    offers: "Offers for you",
+    payHigh: "Pay: highest",
+    payLow: "Pay: lowest",
+    startingSoon: "Starting soonest",
+    fewestApplicants: "Fewest applicants",
+    oldest: "Oldest",
+};
+
+// Ties, and gigs missing the sorted value (they go last), fall back to newest.
+function sortGigs(gigs: Gig[], sort: GigSort, me: { lat: number; lng: number } | null, currency: string): Gig[] {
+    const newest = (a: Gig, b: Gig) => {
+        if (!a.createdAt && !b.createdAt) return 0;
+        if (!a.createdAt) return 1;
+        if (!b.createdAt) return -1;
+        return b.createdAt.getTime() - a.createdAt.getTime();
+    };
+    const nullsLast = (x: number | null, y: number | null, desc = false) => {
+        if (x == null && y == null) return 0;
+        if (x == null) return 1;
+        if (y == null) return -1;
+        return desc ? y - x : x - y;
+    };
+    const pay = (g: Gig) =>
+        g.currencyCode !== currency ? null : g.payType === "hourly" && g.hourlyRate != null ? g.hourlyRate : g.budget;
+    const soon = Date.now() - 60 * 60 * 1000;
+    const start = (g: Gig) => (g.scheduledDate && g.scheduledDate.getTime() >= soon ? g.scheduledDate.getTime() : null);
+    const km = new Map<string, number | null>();
+    const dist = (g: Gig) => {
+        if (!km.has(g.id)) km.set(g.id, me && g.location ? haversineKm(me, g.location) : null);
+        return km.get(g.id) ?? null;
+    };
+    const cmp = (a: Gig, b: Gig): number => {
+        switch (sort) {
+            case "newest": return newest(a, b);
+            case "oldest": return -newest(a, b);
+            case "nearest": return nullsLast(dist(a), dist(b));
+            case "offers": return (a.gigType === "offered" ? 0 : 1) - (b.gigType === "offered" ? 0 : 1);
+            case "payHigh": return nullsLast(pay(a), pay(b), true);
+            case "payLow": return nullsLast(pay(a), pay(b));
+            case "startingSoon": return nullsLast(start(a), start(b));
+            case "fewestApplicants":
+                return nullsLast(a.gigType === "open" ? a.applicantCount : null, b.gigType === "open" ? b.applicantCount : null);
+        }
+    };
+    return [...gigs].sort((a, b) => cmp(a, b) || newest(a, b));
+}
+
+function GigSortSelect({ value, onChange, hasLocation }: { value: GigSort; onChange: (s: GigSort) => void; hasLocation: boolean }) {
+    return (
+        <Select value={value} onValueChange={(v) => onChange((v ?? "newest") as GigSort)}>
+            <SelectTrigger size="sm">
+                <SelectValue>{GIG_SORT_LABELS[value]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false} align="end" className="min-w-44">
+                {(Object.keys(GIG_SORT_LABELS) as GigSort[]).map((s) => (
+                    <SelectItem key={s} value={s} disabled={s === "nearest" && !hasLocation} label={GIG_SORT_LABELS[s]}>
+                        {s === "nearest" && !hasLocation ? "Nearest (turn on location)" : GIG_SORT_LABELS[s]}
+                    </SelectItem>
+                ))}
+            </SelectContent>
+        </Select>
+    );
+}
+
 // Mirrors the gig list card's left-side "skill icon tile" in
 // gig_map_section.dart (_GigListCard) — the gig's first required skill's
 // GSIN icon (or a generic handshake icon, same as SkillIcon's own fallback),
 // tinted with the gig type's own accent color instead of a host photo. The
 // app shows no host avatar at all in this list — only the detail view does
 // (see AvatarHost above), which is unaffected by this.
-function GigSkillTile({ gigType, requiredSkills }: { gigType: Gig["gigType"]; requiredSkills: string[] }) {
+function GigSkillTile({ gigType, requiredSkills, images = [] }: { gigType: Gig["gigType"]; requiredSkills: string[]; images?: string[] }) {
     const isOpen = gigType === "open";
+    const [photoFailed, setPhotoFailed] = useState(false);
+    // The gig's first photo replaces the skill icon when it has one.
+    if (images.length > 0 && !photoFailed) {
+        return (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+                src={images[0]}
+                alt=""
+                loading="lazy"
+                onError={() => setPhotoFailed(true)}
+                className="h-20 w-20 shrink-0 rounded-2xl object-cover bg-muted"
+            />
+        );
+    }
     // The lucide fallback icon tints correctly via `className` (it's inline
     // SVG honoring currentColor and so follows dark mode); the admin's own
     // Iconify-hosted icon is a remote image instead, tinted server-side via
@@ -279,7 +362,7 @@ const Browse = () => {
     // "desc" (newest post on top) is the default — not part of changeFilters/
     // Reset, since it's a display order rather than a filter that narrows
     // results.
-    const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
+    const [sortOrder, setSortOrder] = useState<GigSort>("newest");
     // Collapsed by default — the full grouped panel is tall, so once a
     // worker has their filters set the way they want, hide it and just
     // show what's active as a one-line summary instead.
@@ -535,11 +618,8 @@ const Browse = () => {
     const searchIgnoresRadius = searching && radiusKm != null && myLocation != null;
     const filteredGigs = useMemo(() => {
         const base = queryWords.length === 0 ? radiusFiltered : payRangeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
-        return [...base].sort((a, b) => {
-            const diff = (a.createdAt?.getTime() ?? 0) - (b.createdAt?.getTime() ?? 0);
-            return sortOrder === "asc" ? diff : -diff;
-        });
-    }, [radiusFiltered, payRangeFiltered, queryWords, sortOrder]);
+        return sortGigs(base, sortOrder, myLocation, payCurrency);
+    }, [radiusFiltered, payRangeFiltered, queryWords, sortOrder, myLocation, payCurrency]);
 
     useEffect(() => {
         // Defaults the detail pane to the first result whenever filters/search
@@ -765,7 +845,7 @@ const Browse = () => {
         scheduleDate ? formatScheduleShort(new Date(`${scheduleDate}T00:00:00`)) : "Any schedule",
         payTypeFilter === "all" ? "All pay types" : payTypeFilter === "hourly" ? "Hourly" : "Day",
         payRangeLabel,
-        sortOrder === "desc" ? "Newest first" : "Oldest first",
+        `Sort: ${GIG_SORT_LABELS[sortOrder]}`,
     ];
 
     return (
@@ -998,25 +1078,23 @@ const Browse = () => {
                         <div className="flex flex-wrap items-start gap-3">
                             <div className="flex flex-col gap-1">
                                 <Label className="text-xs text-muted">Sort</Label>
-                                <Select value={sortOrder} onValueChange={(v) => setSortOrder((v ?? "desc") as "desc" | "asc")}>
-                                    <SelectTrigger size="sm">
-                                        <SelectValue>{sortOrder === "desc" ? "Newest first" : "Oldest first"}</SelectValue>
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="desc">Newest first</SelectItem>
-                                        <SelectItem value="asc">Oldest first</SelectItem>
-                                    </SelectContent>
-                                </Select>
+                                <GigSortSelect value={sortOrder} onChange={setSortOrder} hasLocation={!!myLocation} />
                             </div>
                         </div>
                     </div>
                     </>
                     )}
 
-                    <p className="mt-2 text-sm text-muted">
-                        {loading ? "Loading gigs…" : `${filteredGigs.length} gig${filteredGigs.length === 1 ? "" : "s"}`}
-                        {!loading && searchIgnoresRadius && " · search shows matches at any distance"}
-                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-3">
+                        <p className="text-sm text-muted">
+                            {loading ? "Loading gigs…" : `${filteredGigs.length} gig${filteredGigs.length === 1 ? "" : "s"}`}
+                            {!loading && searchIgnoresRadius && " · search shows matches at any distance"}
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-muted">Sort</span>
+                            <GigSortSelect value={sortOrder} onChange={setSortOrder} hasLocation={!!myLocation} />
+                        </div>
+                    </div>
 
                     {!loading && noSkillMatches && (
                         <p className="mt-2 rounded-lg border border-(--quick-start)/60 bg-sidebar px-3 py-2 text-xs text-muted">
@@ -1059,7 +1137,7 @@ const Browse = () => {
                                     gig.id === selectedId ? "border-worker bg-worker-tint" : "border-hairline bg-sidebar hover:bg-mist"
                                 )}
                             >
-                                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} />
+                                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} images={gig.images} />
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>

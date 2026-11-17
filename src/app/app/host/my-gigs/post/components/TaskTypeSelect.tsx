@@ -64,13 +64,17 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }
         <SelectTrigger className="w-full">
           <SelectValue placeholder={placeholder}>{options.find((t) => t.id === value)?.name || placeholder}</SelectValue>
         </SelectTrigger>
-        <SelectContent>
+        {/* Open as a normal dropdown under the field. The default
+            (alignItemWithTrigger) slides the list so the picked item sits on
+            the trigger, which squeezes it to a single visible row ("Baby
+            Sitting") with only tiny scroll arrows to reach the rest. */}
+        <SelectContent alignItemWithTrigger={false} className="max-h-80">
           {suggested.length > 0 && (
             <SelectGroup>
               <SelectLabel>Suggested for {skill?.trim()}</SelectLabel>
               {suggested.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
-                  {t.name} <span className="text-muted text-xs">· {t.group}</span>
+                <SelectItem key={t.id} value={t.id} label={t.name}>
+                  {t.name} <span className="text-muted-foreground text-xs">· {t.group}</span>
                 </SelectItem>
               ))}
             </SelectGroup>
@@ -79,7 +83,7 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }
             <SelectGroup key={group}>
               <SelectLabel>{group}</SelectLabel>
               {items.map((t) => (
-                <SelectItem key={t.id} value={t.id}>
+                <SelectItem key={t.id} value={t.id} label={t.name}>
                   {t.name}
                 </SelectItem>
               ))}
