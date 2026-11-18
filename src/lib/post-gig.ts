@@ -43,6 +43,7 @@ export type PayType = "flat" | "hourly";
 
 export interface CommonGigInput {
   taskTypeId?: string; // GSIN task type (admin catalog)
+  customTaskType?: string; // task type typed under "Other" (not in the catalog) — admin assigns one
   customSkill?: boolean; // skill typed under "Other" (not in the skills library)
   images?: string[]; // gig photos (download URLs, up to 5 — lib/gig-images.ts)
   hostId: string;
@@ -96,6 +97,7 @@ function commonGigFields(input: CommonGigInput) {
     slotsCompleted: 0,
     // GSIN task type → a Cloud Function adds the gig's GSINS/GSKU codes.
     ...(input.taskTypeId ? { taskTypeId: input.taskTypeId } : {}),
+    ...(!input.taskTypeId && input.customTaskType ? { customTaskType: input.customTaskType } : {}),
     ...(input.customSkill ? { customSkill: true } : {}),
     ...(input.images?.length ? { images: input.images } : {}),
   };
@@ -271,6 +273,7 @@ export interface EditGigData {
   skillRequired?: string; // offered gigs
   experienceLevel: ExperienceLevel;
   taskTypeId?: string;
+  customTaskType?: string;
   location: GigLocation;
   address: string;
   place?: GigPlace | null;
@@ -320,6 +323,7 @@ export async function fetchGigForEdit(gigType: "open" | "offered", gigId: string
     skillRequired: data.skillRequired as string | undefined,
     experienceLevel: (data.experienceLevel as ExperienceLevel | undefined) ?? "entry",
     taskTypeId: data.taskTypeId as string | undefined,
+    customTaskType: data.customTaskType as string | undefined,
     location: geo ? { lat: geo.latitude, lng: geo.longitude } : { lat: 0, lng: 0 },
     address: (data.address as string) ?? "",
     place: (data.place as GigPlace | undefined) ?? null,

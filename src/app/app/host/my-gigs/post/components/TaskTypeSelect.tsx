@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fitsSkill, loadGsinTaskTypes, type GsinTaskTypeOption } from "@/lib/gsin-task-types";
@@ -11,11 +12,29 @@ import { fitsSkill, loadGsinTaskTypes, type GsinTaskTypeOption } from "@/lib/gsi
  * Offered gigs), task types linked to that skill come first as "Suggested",
  * and a single match is picked automatically (the host can still change it).
  */
-export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }: {
+/**
+ * `value` for "Other": the host types a task type that isn't in the GSIN
+ * Library. The gig saves it as `customTaskType` (no taskTypeId) and an admin
+ * assigns a real one in All Gigs.
+ */
+export const OTHER_TASK_TYPE = "_other";
+
+/** Tidied "Other" text, or an error message. */
+export function checkCustomTaskType(text: string): { value: string } | { error: string } {
+  const value = text.trim().replace(/\s+/g, " ");
+  if (value.length < 2) return { error: "Type the task type (at least 2 characters)." };
+  return { value: value.slice(0, 40) };
+}
+
+export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled, customValue = "", onCustomChange }: {
   value: string;
   onChange: (id: string) => void;
   skill?: string;
   onAvailable?: (available: boolean) => void;
+  /** Typed task type when `value` is OTHER_TASK_TYPE. */
+  customValue?: string;
+  /** Offers "Other (not listed)" when set. */
+  onCustomChange?: (text: string) => void;
   // Locked once a gig exists — firestore.rules blocks the entire update if
   // taskTypeId is among the changed keys (see commonGigUpdateFields in
   // post-gig.ts), since a Cloud Function derives GSIN codes from it once.
@@ -54,6 +73,10 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }
     return acc;
   }, {});
   const placeholder = "Choose what kind of task this is";
+  const isOther = value === OTHER_TASK_TYPE;
+  const shown = isOther
+    ? disabled && customValue.trim() ? `${customValue.trim()} (Other)` : "Other (not listed)"
+    : options.find((t) => t.id === value)?.name || placeholder;
 
   return (
     <div className="space-y-1.5">
@@ -62,7 +85,7 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }
       </Label>
       <Select value={value} onValueChange={(v) => { autoPicked.current = ""; onChange(v ?? ""); }} disabled={disabled}>
         <SelectTrigger className="w-full">
-          <SelectValue placeholder={placeholder}>{options.find((t) => t.id === value)?.name || placeholder}</SelectValue>
+          <SelectValue placeholder={placeholder}>{shown}</SelectValue>
         </SelectTrigger>
         {/* Open as a normal dropdown under the field. The default
             (alignItemWithTrigger) slides the list so the picked item sits on
@@ -89,8 +112,27 @@ export function TaskTypeSelect({ value, onChange, skill, onAvailable, disabled }
               ))}
             </SelectGroup>
           ))}
+          {onCustomChange && (
+            <SelectGroup>
+              <SelectLabel>Not in the list?</SelectLabel>
+              <SelectItem value={OTHER_TASK_TYPE} label="Other (not listed)">
+                Other (not listed)
+              </SelectItem>
+            </SelectGroup>
+          )}
         </SelectContent>
       </Select>
+      {isOther && !disabled && (
+        <div className="space-y-1">
+          <Input
+            value={customValue}
+            maxLength={40}
+            placeholder="Type the task type, e.g. Pool cleaning"
+            onChange={(e) => onCustomChange?.(e.target.value)}
+          />
+          <p className="text-xs text-muted">Giggre will review it and add it to the list.</p>
+        </div>
+      )}
       {disabled && <p className="text-xs text-muted">Can&apos;t be changed after posting.</p>}
     </div>
   );

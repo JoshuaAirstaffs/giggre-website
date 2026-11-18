@@ -12,7 +12,7 @@ import { consumePostAgainPrefill } from "@/lib/post-again";
 import { startAutoSearch } from "@/lib/quick-gig-matching";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
-import { TaskTypeSelect } from "./TaskTypeSelect";
+import { checkCustomTaskType, OTHER_TASK_TYPE, TaskTypeSelect } from "./TaskTypeSelect";
 import { GigPhotosInput } from "./GigPhotosInput";
 import { uploadGigImages } from "@/lib/gig-images";
 
@@ -91,6 +91,7 @@ export default function QuickGigForm() {
   const [lastGigId, setLastGigId] = useState<string | null>(null);
   // GSIN task type — the picker only shows once the admin has set up task types.
   const [taskTypeId, setTaskTypeId] = useState("");
+  const [customTaskType, setCustomTaskType] = useState("");
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const unsubscribeSearchRef = useRef<(() => void) | null>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -240,7 +241,10 @@ export default function QuickGigForm() {
     const error = validateCommon();
     if (error) return toast.error(error);
     if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
-    const contentError = await checkContent();
+    const custom = taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
+    if (custom && "error" in custom) return toast.error(custom.error);
+    const customTask = custom && "value" in custom ? custom.value : undefined;
+    const contentError = await checkContent(customTask);
     if (contentError) return toast.error(contentError);
 
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
@@ -271,7 +275,8 @@ export default function QuickGigForm() {
         place: fields.place,
         scheduledDate: getScheduledDate(),
         workerSlots: Number(fields.workerSlots),
-        taskTypeId: taskTypeId || undefined,
+        taskTypeId: taskTypeId && taskTypeId !== OTHER_TASK_TYPE ? taskTypeId : undefined,
+        customTaskType: customTask,
       });
       toast.success("Gig Successfully Posted");
       setLastGigId(gigId);
@@ -304,7 +309,7 @@ export default function QuickGigForm() {
       <div className="grid gap-x-8 gap-y-4 lg:grid-cols-2">
         <div className="space-y-4">
           <CommonGigDetails fields={fields} setField={setField} currencyCode={currencyCode} />
-          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} onAvailable={setHasTaskTypes} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} customValue={customTaskType} onCustomChange={setCustomTaskType} onAvailable={setHasTaskTypes} />
           <GigPhotosInput files={photos} onChange={setPhotos} />
         </div>
         <CommonGigSchedule

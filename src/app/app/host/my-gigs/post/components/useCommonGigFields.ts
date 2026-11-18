@@ -273,8 +273,8 @@ export function useCommonGigFields() {
   // description against ContentFilterService) — called separately from
   // validateCommon since it's async (reads the admin-managed blocked-term
   // list) while every other check here is synchronous.
-  async function checkContent(): Promise<string | null> {
-    const blocked = await containsBlockedContent(fields.title, fields.description);
+  async function checkContent(...extra: (string | undefined)[]): Promise<string | null> {
+    const blocked = await containsBlockedContent(fields.title, fields.description, ...extra);
     return blocked ? CONTENT_REJECTION_MESSAGE : null;
   }
 

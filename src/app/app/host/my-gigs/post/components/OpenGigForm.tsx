@@ -1,7 +1,7 @@
 "use client";
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
-import { TaskTypeSelect } from "./TaskTypeSelect";
+import { checkCustomTaskType, OTHER_TASK_TYPE, TaskTypeSelect } from "./TaskTypeSelect";
 import { GigPhotosInput } from "./GigPhotosInput";
 import { uploadGigImages } from "@/lib/gig-images";
 import { SkillSelect, isCustomSkill } from "./SkillSelect";
@@ -50,7 +50,8 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
   const [skills, setSkills] = useState<string[]>([]);
   const [requiredSkill, setRequiredSkill] = useState(editGig?.requiredSkill ?? "");
   // GSIN task type — shown once the admin has set up task types, then required.
-  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? "");
+  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? (editGig?.customTaskType ? OTHER_TASK_TYPE : ""));
+  const [customTaskType, setCustomTaskType] = useState(editGig?.customTaskType ?? "");
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editGig?.experienceLevel ?? "entry");
   const [submitting, setSubmitting] = useState(false);
@@ -110,7 +111,10 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
     if (!requiredSkill.trim()) return toast.error("Please select a required skill (or type one under Other).");
     if (requiredSkill.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
     if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
-    const contentError = await checkContent();
+    const custom = !editGig && taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
+    if (custom && "error" in custom) return toast.error(custom.error);
+    const customTask = custom && "value" in custom ? custom.value : undefined;
+    const contentError = await checkContent(customTask);
     if (contentError) return toast.error(contentError);
 
     if (!(await limitGuard({ amount: resolvePayFields().budget * Math.max(1, Number(fields.workerSlots) || 1), currencyCode, action: "post" }))) return;
@@ -143,7 +147,8 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
         requiredSkill: requiredSkill.trim(),
         experienceLevel,
         customSkill: isCustomSkill(requiredSkill, skills),
-        taskTypeId: taskTypeId || undefined,
+        taskTypeId: taskTypeId && taskTypeId !== OTHER_TASK_TYPE ? taskTypeId : undefined,
+        customTaskType: customTask,
       };
       if (editGig) {
         await updateOpenGig(editGig.gigId, input);
@@ -179,7 +184,7 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
 
           <SkillSelect value={requiredSkill} onChange={setRequiredSkill} skills={skills} />
 
-          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={requiredSkill} onAvailable={setHasTaskTypes} disabled={!!editGig} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} customValue={customTaskType} onCustomChange={setCustomTaskType} skill={requiredSkill} onAvailable={setHasTaskTypes} disabled={!!editGig} />
           {!editGig && <GigPhotosInput files={photos} onChange={setPhotos} />}
 
           <div className="space-y-1.5">

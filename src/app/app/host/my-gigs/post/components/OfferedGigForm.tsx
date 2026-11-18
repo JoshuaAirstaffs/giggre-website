@@ -1,7 +1,7 @@
 "use client";
 
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
-import { TaskTypeSelect } from "./TaskTypeSelect";
+import { checkCustomTaskType, OTHER_TASK_TYPE, TaskTypeSelect } from "./TaskTypeSelect";
 import { GigPhotosInput } from "./GigPhotosInput";
 import { uploadGigImages } from "@/lib/gig-images";
 import { SkillSelect, isCustomSkill } from "./SkillSelect";
@@ -64,7 +64,8 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
   const [skills, setSkills] = useState<string[]>([]);
   const [skillRequired, setSkillRequired] = useState(editGig?.skillRequired ?? "");
   // GSIN task type — shown once the admin has set up task types, then required.
-  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? "");
+  const [taskTypeId, setTaskTypeId] = useState(editGig?.taskTypeId ?? (editGig?.customTaskType ? OTHER_TASK_TYPE : ""));
+  const [customTaskType, setCustomTaskType] = useState(editGig?.customTaskType ?? "");
   const [hasTaskTypes, setHasTaskTypes] = useState(false);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel>(editGig?.experienceLevel ?? "entry");
   // Arriving via the Favorites page's "Quick Offer" button — the parent page
@@ -193,10 +194,13 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
     if (!skillRequired.trim()) return toast.error("Please select a required skill (or type one under Other).");
     if (skillRequired.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
     if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    const custom = !editGig && taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
+    if (custom && "error" in custom) return toast.error(custom.error);
+    const customTask = custom && "value" in custom ? custom.value : undefined;
     if (!editGig && selectedWorkers.length === 0) {
       return toast.error("Please select at least one worker to offer this gig to.");
     }
-    const contentError = await checkContent();
+    const contentError = await checkContent(customTask);
     if (contentError) return toast.error(contentError);
 
     const recipientCount = editGig ? editGig.workerSlots : selectedWorkers.length;
@@ -229,7 +233,8 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
         skillRequired: skillRequired.trim(),
         experienceLevel,
         customSkill: isCustomSkill(skillRequired, skills),
-        taskTypeId: taskTypeId || undefined,
+        taskTypeId: taskTypeId && taskTypeId !== OTHER_TASK_TYPE ? taskTypeId : undefined,
+        customTaskType: customTask,
       };
       if (editGig) {
         await updateOfferedGig(editGig.gigId, input);
@@ -401,7 +406,7 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
 
           <SkillSelect value={skillRequired} onChange={setSkillRequired} skills={skills} />
 
-          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} skill={skillRequired} onAvailable={setHasTaskTypes} disabled={!!editGig} />
+          <TaskTypeSelect value={taskTypeId} onChange={setTaskTypeId} customValue={customTaskType} onCustomChange={setCustomTaskType} skill={skillRequired} onAvailable={setHasTaskTypes} disabled={!!editGig} />
 
           {!editGig && <GigPhotosInput files={photos} onChange={setPhotos} />}
 
