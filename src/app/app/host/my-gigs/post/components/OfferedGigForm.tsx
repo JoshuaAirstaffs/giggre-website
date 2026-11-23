@@ -29,6 +29,7 @@ import {
 } from "@/lib/post-gig";
 import { useCommonGigFields } from "./useCommonGigFields";
 import { CommonGigDetails, CommonGigSchedule } from "./CommonGigFields";
+import { SkeletonRows } from "@/components/ui/skeleton";
 
 const USER_ID_FORMAT = /^[A-Z]{3}\d{6}$/i;
 
@@ -302,7 +303,7 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
           </div>
           <div className="max-h-64 overflow-y-auto border-t border-border">
             {loadingFavorites ? (
-              <p className="p-3 text-center text-xs text-muted">Loading favorites…</p>
+              <SkeletonRows count={3} />
             ) : filteredFavorites.length > 0 ? (
               filteredFavorites.map((fav) => {
                 const isSelected = selectedWorkers.some((w) => w.uid === fav.uid);

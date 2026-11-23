@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { loadGoogleMapsLibrary as loadGoogleMaps, loadGooglePlacesLibrary as loadGooglePlaces } from "@/lib/google-maps";
 import type { GigLocation } from "@/lib/post-gig";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface MapCanvasProps {
   location: GigLocation | null;
@@ -139,9 +140,7 @@ function MapCanvas({
         <div ref={mapDivRef} className="h-full w-full" />
 
         {!ready && !loadError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-secondary">
-            <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-          </div>
+          <Skeleton className="absolute inset-0 rounded-none" />
         )}
 
         {loadError && (

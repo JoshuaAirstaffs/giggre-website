@@ -13,6 +13,7 @@ import {
 import { useAppSelector } from "@/store/hooks";
 import { useNotifications } from "@/hooks/use-notifications";
 import { timeAgo } from "@/lib/notifications";
+import { SkeletonRows } from "@/components/ui/skeleton";
 
 export default function NotificationBell({ role }: { role?: "host" | "worker" }) {
   const uid = useAppSelector((root) => root.user.authUser?.uid);
@@ -59,7 +60,7 @@ export default function NotificationBell({ role }: { role?: "host" | "worker" })
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {loading ? (
-          <p className="px-1.5 py-3 text-center text-sm text-muted-foreground">Loading…</p>
+          <SkeletonRows count={3} />
         ) : error ? (
           <p className="px-1.5 py-3 text-center text-sm text-destructive">{error}</p>
         ) : notifications.length === 0 ? (

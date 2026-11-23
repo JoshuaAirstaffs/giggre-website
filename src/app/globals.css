@@ -309,3 +309,19 @@ body {
     animation: none;
   }
 }
+
+/* Skeleton shimmer (components/ui/skeleton.tsx): a soft highlight sweeping
+   across the grey placeholder, matching the app's Shimmer. */
+@keyframes skeleton-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+.skeleton-shimmer {
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in oklab, var(--background) 55%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  animation: skeleton-shimmer 1.3s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer { animation: none; background-image: none; }
+}

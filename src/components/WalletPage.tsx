@@ -494,7 +494,7 @@ function TopUpDialog({
                   <Input id="cash-in-amount" type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="pl-7" />
                 </div>
                 <p className="mt-1 text-xs text-muted">
-                  {ratesReady ? `Min ${formatWalletMoney(effectiveMin, currencyCode)} · Max ${formatWalletMoney(effectiveMax, currencyCode)}` : "Loading limits…"}
+                  {ratesReady ? `Min ${formatWalletMoney(effectiveMin, currencyCode)} · Max ${formatWalletMoney(effectiveMax, currencyCode)}` : <Skeleton className="inline-block h-3 w-40 align-middle" />}
                 </p>
               </div>
               <div>
@@ -812,7 +812,7 @@ function WithdrawDialog({
                 </div>
                 <p className="mt-1 text-xs text-muted">
                   {!ratesReady
-                    ? "Loading limits…"
+                    ? <Skeleton className="inline-block h-3 w-40 align-middle" />
                     : [min != null && `Min ${formatWalletMoney(min, currencyCode)}`, max != null && `Max ${formatWalletMoney(max, currencyCode)}`].filter(Boolean).join(" · ") ||
                       "No minimum or maximum"}
                 </p>

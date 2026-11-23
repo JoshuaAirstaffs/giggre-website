@@ -12,7 +12,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Message, MessageAvatar, MessageContent, MessageFooter } from "@/components/ui/message";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonBubbles } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useAppSelector } from "@/store/hooks";
 import { cn } from "@/lib/utils";
@@ -323,7 +323,7 @@ export default function SupportPage() {
 
               <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
                 {messagesLoading ? (
-                  <Skeleton className="h-10 w-2/3" />
+                  <SkeletonBubbles />
                 ) : messages.length === 0 ? (
                   <p className="text-center text-xs text-muted">No messages yet.</p>
                 ) : (

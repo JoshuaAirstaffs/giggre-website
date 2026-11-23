@@ -31,7 +31,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Message, MessageAvatar, MessageContent, MessageFooter } from "@/components/ui/message";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Skeleton, SkeletonBubbles, SkeletonRows } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -928,7 +928,7 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                     />
                     <div className="max-h-80 space-y-0.5 overflow-y-auto">
                       {loadingFavorites ? (
-                        <p className="p-2 text-center text-xs text-muted">Loading favorites…</p>
+                        <SkeletonRows count={3} />
                       ) : (
                         <>
                           {newChatResults.length > 0 && (
@@ -1110,15 +1110,13 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                 className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4"
               >
                 {messagesLoading ? (
-                  <Skeleton className="h-10 w-2/3" />
+                  <SkeletonBubbles />
                 ) : messages.length === 0 ? (
                   <p className="text-center text-xs text-muted">No messages yet — say hello!</p>
                 ) : (
                   <>
                     {loadingOlder && (
-                      <div className="flex justify-center py-1">
-                        <Loader2 className="size-4 animate-spin text-muted" />
-                      </div>
+                      <SkeletonBubbles count={2} />
                     )}
                     {messages.map((message, index) => {
                       const mine = message.senderId === myUid;

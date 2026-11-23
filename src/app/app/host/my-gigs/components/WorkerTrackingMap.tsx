@@ -4,6 +4,7 @@ import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
 import { loadGoogleMapsLibrary, loadGoogleMarkerLibrary } from "@/lib/google-maps";
+import { Skeleton } from "@/components/ui/skeleton";
 
 interface LatLng {
   lat: number;
@@ -350,9 +351,7 @@ export default function WorkerTrackingMap({ workers, destination }: WorkerTracki
         <div ref={mapDivRef} className="h-full w-full" />
 
         {!ready && !loadError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-secondary">
-            <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-          </div>
+          <Skeleton className="absolute inset-0 rounded-none" />
         )}
 
         {loadError && (
