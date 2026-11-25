@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { LifeBuoy, Loader2, Send } from "lucide-react";
+import { FileText, LifeBuoy, Loader2, Paperclip, Send, X } from "lucide-react";
 import TitlePage from "@/components/TitlePage";
 import JoshDiv from "@/components/DivAnimation";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -23,6 +23,8 @@ import {
   subscribeMessages,
   subscribeSupportTickets,
   submitSupportTicket,
+  SUPPORT_MAX_FILES,
+  supportAttachmentProblem,
   type ChatMessage,
   type SupportTicket,
   type TicketStatus,
@@ -109,6 +111,38 @@ function MessageSenderAvatar({ mine, photoUrl, senderName }: { mine: boolean; ph
   );
 }
 
+function fileSizeLabel(bytes: number) {
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+// A file sent in the thread (chat_rooms message attachmentUrl/Type/Name):
+// photos and videos inline, anything else as a download link.
+function SupportAttachment({ attachment, mine }: { attachment: NonNullable<ChatMessage["attachment"]>; mine: boolean }) {
+  if (attachment.type === "image") {
+    return (
+      <a href={attachment.url} target="_blank" rel="noopener noreferrer">
+        {/* eslint-disable-next-line @next/next/no-img-element -- Firebase Storage URL, not a static asset */}
+        <img src={attachment.url} alt={attachment.name || "Photo"} className="max-h-60 rounded-lg object-cover" />
+      </a>
+    );
+  }
+  if (attachment.type === "video") {
+    return <video src={attachment.url} controls className="max-h-60 rounded-lg" />;
+  }
+  return (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className={cn("flex items-center gap-2 underline underline-offset-2", mine ? "text-white" : "text-worker")}
+    >
+      <FileText className="size-4 shrink-0" />
+      <span className="truncate">{attachment.name || "File"}</span>
+    </a>
+  );
+}
+
 export default function SupportPage() {
   const { authUser, profile } = useAppSelector((root) => root.user);
   const uid = authUser?.uid;
@@ -122,6 +156,8 @@ export default function SupportPage() {
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -189,6 +225,24 @@ export default function SupportPage() {
 
   const selectedTicket = tickets.find((t) => t.roomId === selectedRoomId) ?? null;
 
+  function addFiles(picked: FileList | null) {
+    if (!picked) return;
+    const next = [...files];
+    for (const file of Array.from(picked)) {
+      const problem = supportAttachmentProblem(file);
+      if (problem) {
+        toast.error(problem);
+        continue;
+      }
+      if (next.length >= SUPPORT_MAX_FILES) {
+        toast.error(`You can attach up to ${SUPPORT_MAX_FILES} files.`);
+        break;
+      }
+      next.push(file);
+    }
+    setFiles(next);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!uid || submitting) return;
@@ -198,11 +252,15 @@ export default function SupportPage() {
     }
     setSubmitting(true);
     try {
-      const result = await submitSupportTicket(uid, name.trim(), email.trim(), subject.trim(), message.trim());
+      const result = await submitSupportTicket(uid, name.trim(), email.trim(), subject.trim(), message.trim(), files);
       if (result.ok) {
         toast.success("We've received your message and will respond within 24–48 hours.");
+        if (result.failedFiles.length > 0) {
+          toast.error(`Couldn't upload ${result.failedFiles.join(", ")}. Your message was sent — please try attaching it again.`);
+        }
         setSubject("");
         setMessage("");
+        setFiles([]);
         setSelectedRoomId(result.roomId);
       } else {
         toast.error(result.reason);
@@ -302,8 +360,60 @@ export default function SupportPage() {
                 />
               </div>
 
+              <div className="space-y-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    addFiles(e.target.files);
+                    e.target.value = ""; // allow picking the same file again after removing it
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={submitting || files.length >= SUPPORT_MAX_FILES}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="size-4" />
+                  Attach files
+                </Button>
+                <p className="text-xs text-muted">
+                  Optional — screenshots, photos, videos or documents. Up to {SUPPORT_MAX_FILES} files (photos 10MB, videos
+                  50MB, documents 20MB).
+                </p>
+                {files.length > 0 && (
+                  <ul className="space-y-1.5">
+                    {files.map((file, i) => (
+                      <li
+                        key={`${file.name}-${file.size}-${i}`}
+                        className="flex items-center gap-2 rounded-md border border-hairline px-2.5 py-1.5 text-sm"
+                      >
+                        <FileText className="size-4 shrink-0 text-muted" />
+                        <span className="min-w-0 flex-1 truncate text-ink">{file.name}</span>
+                        <span className="shrink-0 text-xs text-muted">{fileSizeLabel(file.size)}</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Remove ${file.name}`}
+                          disabled={submitting}
+                          onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
               <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
-                {submitting ? "Sending…" : "Send"}
+                {submitting ? (files.length > 0 ? "Sending & uploading…" : "Sending…") : "Send"}
               </Button>
             </form>
           ) : (
@@ -342,7 +452,11 @@ export default function SupportPage() {
                               mine ? "self-end bg-worker text-white" : "self-start border border-hairline bg-card text-ink"
                             )}
                           >
-                            <p className="whitespace-pre-line">{messageText(msg.text)}</p>
+                            {msg.attachment ? (
+                              <SupportAttachment attachment={msg.attachment} mine={mine} />
+                            ) : (
+                              <p className="whitespace-pre-line">{messageText(msg.text)}</p>
+                            )}
                           </div>
                           <MessageFooter className={cn("gap-1 text-muted", mine && "justify-end")}>
                             <span>{timeLabel(msg.createdAt)}</span>

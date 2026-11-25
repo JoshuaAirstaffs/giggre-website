@@ -15,7 +15,9 @@ import {
   Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { db, storage } from "@/lib/firebase";
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_PREVIEW_TEXT, attachmentTypeForFile } from "@/lib/chat";
 
 // Mirrors giggre_app's lib/screens/app_contents/contact_us.dart
 // (_generateTicketNumber / the authenticated submit path) — same
@@ -28,7 +30,51 @@ import { db } from "@/lib/firebase";
 export { subscribeMessages, fetchOlderMessages, type ChatMessage } from "@/lib/chat";
 
 type ActionResult = { ok: true } | { ok: false; reason: string };
-type SubmitTicketResult = { ok: true; roomId: string } | { ok: false; reason: string };
+// failedFiles: names of attachments that couldn't be uploaded (the ticket
+// itself was still created — the user is told which files to resend).
+type SubmitTicketResult = { ok: true; roomId: string; failedFiles: string[] } | { ok: false; reason: string };
+
+/** Max files on one Contact us message. */
+export const SUPPORT_MAX_FILES = 5;
+
+/** Why this file can't be attached, or null if it's fine (same caps as chat). */
+export function supportAttachmentProblem(file: File): string | null {
+  const max = ATTACHMENT_MAX_BYTES[attachmentTypeForFile(file)];
+  return file.size > max ? `${file.name} is too large — the limit is ${Math.round(max / (1024 * 1024))}MB.` : null;
+}
+
+// Same message shape as chat.ts's sendAttachmentMessage / chat.dart's
+// attachments (attachmentUrl/Type/Name + a 📷/🎥/📎 fallback text), stored
+// under chat_attachments/{roomId}/ — storage.rules lets the room's `userId`
+// (the ticket owner) upload there. The room must already exist.
+export async function sendSupportAttachment(roomId: string, uid: string, name: string, file: File): Promise<void> {
+  const problem = supportAttachmentProblem(file);
+  if (problem) throw new Error(problem);
+  const attachmentType = attachmentTypeForFile(file);
+  const storageRef = ref(storage, `chat_attachments/${roomId}/${Date.now()}_${file.name}`);
+  await uploadBytes(storageRef, file);
+  const url = await getDownloadURL(storageRef);
+  const previewText = ATTACHMENT_PREVIEW_TEXT[attachmentType](file.name);
+
+  await addDoc(collection(db, "chat_rooms", roomId, "messages"), {
+    senderId: uid,
+    isSupport: false,
+    name,
+    text: previewText,
+    attachmentUrl: url,
+    attachmentType,
+    attachmentName: file.name,
+    hasSeen: true,
+    hasSeenByAdmin: false,
+    createdAt: serverTimestamp(),
+    isAutoReply: false,
+  });
+  await updateDoc(doc(db, "chat_rooms", roomId), {
+    lastMessage: previewText,
+    lastMessageSender: "You",
+    lastMessageAt: serverTimestamp(),
+  });
+}
 
 const SUPPORT_SENDER_ID = "support";
 const SUPPORT_NAME = "Giggre Support";
@@ -110,7 +156,8 @@ export async function submitSupportTicket(
   name: string,
   email: string,
   subject: string,
-  message: string
+  message: string,
+  files: File[] = []
 ): Promise<SubmitTicketResult> {
   try {
     const ticketNumber = await generateTicketNumber();
@@ -162,12 +209,24 @@ export async function submitSupportTicket(
       isAutoReply: false,
     });
 
+    // Attachments go in after the text and before the auto-reply, so the
+    // thread reads: message, files, then "Thank you for contacting us".
+    const failedFiles: string[] = [];
+    for (const file of files.slice(0, SUPPORT_MAX_FILES)) {
+      try {
+        await sendSupportAttachment(roomRef.id, uid, name, file);
+      } catch (err) {
+        console.error("Failed to upload support attachment:", err);
+        failedFiles.push(file.name);
+      }
+    }
+
     if (autoReplyEnabled) {
       const autoReplyMessage = (autoReplyData?.auto_reply_message as string | undefined) || DEFAULT_AUTO_REPLY;
       void sendAutoReplyAfterDelay(roomRef.id, autoReplyMessage);
     }
 
-    return { ok: true, roomId: roomRef.id };
+    return { ok: true, roomId: roomRef.id, failedFiles };
   } catch (err) {
     console.error("Failed to submit support ticket:", err);
     return { ok: false, reason: "Couldn't submit your message. Please try again." };
