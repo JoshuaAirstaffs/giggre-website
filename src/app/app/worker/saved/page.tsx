@@ -1,5 +1,6 @@
 "use client";
 
+import { useDisplayPay } from "@/hooks/use-display-pay";
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { useEffect, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -18,7 +19,7 @@ import { useAppSelector } from "@/store/hooks";
 import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf } from "@/lib/gig-format";
 import {
   acceptOfferedGig,
   applyToOpenGig,
@@ -96,6 +97,8 @@ function matchesSkill(a: string, b: string) {
 // Flutter screen uses. Bookmarks are toggled from the Browse page; this
 // page is read-only aside from removing one.
 export default function SavedGigsPage() {
+  // Gig pay in the worker's currency (≈ converted; see lib/display-currency.ts).
+  const { payLabel } = useDisplayPay();
   const uid = useAppSelector((root) => root.user.authUser?.uid);
   const profile = useAppSelector((root) => root.user.profile);
   const workerName = profile?.name || "Worker";
@@ -418,7 +421,7 @@ export default function SavedGigsPage() {
                 <div>
                   <SectionLabel icon={Wallet}>Salary</SectionLabel>
                   <p className="mt-1 text-sm font-medium text-ink">
-                    {payLabel(viewingGig.currencyCode, viewingGig)}
+                    {payLabel(viewingGig.currencyCode, viewingGig, { withOriginal: true })}
                   </p>
                 </div>
 

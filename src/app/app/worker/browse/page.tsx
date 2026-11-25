@@ -1,5 +1,6 @@
 'use client'
 
+import { useDisplayPay } from "@/hooks/use-display-pay";
 import { useUnverifiedLimitGuard } from "@/components/UnverifiedLimit";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -48,7 +49,7 @@ import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import SkillIcon from "@/components/SkillIcon";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
@@ -61,6 +62,7 @@ import {
     fetchHostQuickInfo,
     fetchSkillNames,
     gigMatchesPayRange,
+    isPhGig,
     gigMatchesPayType,
     gigMatchesScheduleDate,
     gigMatchesSearch,
@@ -196,7 +198,7 @@ const GIG_SORT_LABELS: Record<GigSort, string> = {
 };
 
 // Ties, and gigs missing the sorted value (they go last), fall back to newest.
-function sortGigs(gigs: Gig[], sort: GigSort, me: { lat: number; lng: number } | null, currency: string): Gig[] {
+function sortGigs(gigs: Gig[], sort: GigSort, me: { lat: number; lng: number } | null, currency: string, convert?: (amount: number, from: string | undefined) => number | null): Gig[] {
     const newest = (a: Gig, b: Gig) => {
         if (!a.createdAt && !b.createdAt) return 0;
         if (!a.createdAt) return 1;
@@ -209,8 +211,10 @@ function sortGigs(gigs: Gig[], sort: GigSort, me: { lat: number; lng: number } |
         if (y == null) return -1;
         return desc ? y - x : x - y;
     };
-    const pay = (g: Gig) =>
-        g.currencyCode !== currency ? null : g.payType === "hourly" && g.hourlyRate != null ? g.hourlyRate : g.budget;
+    const pay = (g: Gig) => {
+        const raw = g.payType === "hourly" && g.hourlyRate != null ? g.hourlyRate : g.budget;
+        return g.currencyCode === currency ? raw : (convert?.(raw, g.currencyCode) ?? null);
+    };
     const soon = Date.now() - 60 * 60 * 1000;
     const start = (g: Gig) => (g.scheduledDate && g.scheduledDate.getTime() >= soon ? g.scheduledDate.getTime() : null);
     const km = new Map<string, number | null>();
@@ -359,6 +363,12 @@ const Browse = () => {
     const [payMin, setPayMin] = useState<number | null>(null);
     const [payMax, setPayMax] = useState<number | null>(null);
     const payCurrency = profile?.currencyCode === "PHP" ? "PHP" : "USD";
+    // Gig pay shown (and compared) in the worker's currency; see lib/display-currency.ts.
+    const { payLabel: showPay, convert: toMyCurrency } = useDisplayPay();
+    // Only gigs in the worker's own region: Philippines → PH gigs, US and
+    // everywhere else → non-PH gigs (lib/browse-gigs.ts isPhGig). Gigs offered
+    // to this worker directly always show.
+    const regionOpenGigs = useMemo(() => openGigs.filter((g) => isPhGig(g) === (payCurrency === "PHP")), [openGigs, payCurrency]);
     // "desc" (newest post on top) is the default — not part of changeFilters/
     // Reset, since it's a display order rather than a filter that narrows
     // results.
@@ -404,7 +414,7 @@ const Browse = () => {
     const nearestSkillGigRadius = useMemo(() => {
         if (!myLocation || !hasSkills) return null;
         let nearestKm: number | null = null;
-        for (const g of [...openGigs, ...offeredGigs]) {
+        for (const g of [...regionOpenGigs, ...offeredGigs]) {
             if (blockedHostIds.has(g.hostId) || !g.location) continue;
             if (!g.requiredSkills.some((s) => workerSkills.some((ws) => matchesSkill(ws, s)))) continue;
             const km = haversineKm(myLocation, g.location);
@@ -413,7 +423,7 @@ const Browse = () => {
         if (nearestKm === null) return null;
         const shown = units.fromKm(nearestKm);
         return RADIUS_OPTIONS.find((r) => r !== null && shown <= r) ?? null;
-    }, [myLocation, hasSkills, openGigs, offeredGigs, blockedHostIds, workerSkills, units]);
+    }, [myLocation, hasSkills, regionOpenGigs, offeredGigs, blockedHostIds, workerSkills, units]);
 
     useEffect(() => {
         if (!usingDefaultFilters) return;
@@ -552,8 +562,8 @@ const Browse = () => {
     }, []);
 
     const allGigs = useMemo(
-        () => [...openGigs, ...offeredGigs].filter((g) => !blockedHostIds.has(g.hostId)),
-        [openGigs, offeredGigs, blockedHostIds]
+        () => [...regionOpenGigs, ...offeredGigs].filter((g) => !blockedHostIds.has(g.hostId)),
+        [regionOpenGigs, offeredGigs, blockedHostIds]
     );
 
     const mySkillsMatched = useMemo(
@@ -589,8 +599,8 @@ const Browse = () => {
     );
 
     const payRangeFiltered = useMemo(
-        () => payTypeFiltered.filter((g) => gigMatchesPayRange(g, payMin, payMax, payCurrency)),
-        [payTypeFiltered, payMin, payMax, payCurrency]
+        () => payTypeFiltered.filter((g) => gigMatchesPayRange(g, payMin, payMax, payCurrency, toMyCurrency)),
+        [payTypeFiltered, payMin, payMax, payCurrency, toMyCurrency]
     );
 
     // Mirrors gig_map_section.dart's _filteredGigs: distance is applied last
@@ -618,8 +628,8 @@ const Browse = () => {
     const searchIgnoresRadius = searching && radiusKm != null && myLocation != null;
     const filteredGigs = useMemo(() => {
         const base = queryWords.length === 0 ? radiusFiltered : payRangeFiltered.filter((gig) => gigMatchesSearch(gig, queryWords));
-        return sortGigs(base, sortOrder, myLocation, payCurrency);
-    }, [radiusFiltered, payRangeFiltered, queryWords, sortOrder, myLocation, payCurrency]);
+        return sortGigs(base, sortOrder, myLocation, payCurrency, toMyCurrency);
+    }, [radiusFiltered, payRangeFiltered, queryWords, sortOrder, myLocation, payCurrency, toMyCurrency]);
 
     useEffect(() => {
         // Defaults the detail pane to the first result whenever filters/search
@@ -1142,7 +1152,7 @@ const Browse = () => {
                                     <div className="flex items-start justify-between gap-2">
                                         <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
                                         <div className="flex shrink-0 items-center gap-1">
-                                            <span className="font-semibold text-ink">{payLabel(gig.currencyCode, gig)}</span>
+                                            <span className="font-semibold text-ink">{showPay(gig.currencyCode, gig)}</span>
                                             <Button
                                                 variant="ghost"
                                                 size="icon-sm"
@@ -1257,7 +1267,7 @@ const Browse = () => {
 
                                 <div>
                                     <SectionLabel icon={Wallet}>Salary</SectionLabel>
-                                    <p className="mt-1 text-sm font-medium text-ink">{payLabel(selectedGig.currencyCode, selectedGig)}</p>
+                                    <p className="mt-1 text-sm font-medium text-ink">{showPay(selectedGig.currencyCode, selectedGig, { withOriginal: true })}</p>
                                 </div>
 
                                 <Separator />

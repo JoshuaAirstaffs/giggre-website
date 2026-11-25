@@ -44,8 +44,9 @@ export function formatScheduleShort(date: Date | null): string {
 }
 
 export function currencySymbol(currency?: string) {
-  if (currency === "USD") return "$";
-  return "₱";
+  // ₱ only for PHP; USD and anything unknown default to $ (same as the app).
+  if (currency === "PHP") return "₱";
+  return "$";
 }
 
 export function salary(currency?: string, budget?: number) {

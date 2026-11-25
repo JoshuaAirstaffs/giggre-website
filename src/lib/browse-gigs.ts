@@ -249,14 +249,31 @@ export function gigMatchesPayType(gig: Gig, payType: PayTypeFilter): boolean {
   return gig.payType !== "hourly";
 }
 
+// Region of a gig for the worker list (mirrors gig_map_section.dart
+// _isPhGig): the country saved when it was posted (place.countryCode), else
+// its currency for older gigs. Workers in the Philippines see only PH gigs;
+// workers in the US and everywhere else (USD default) see only non-PH gigs.
+export function isPhGig(gig: Pick<Gig, "place" | "currencyCode">): boolean {
+  const c = gig.place?.countryCode;
+  if (c) return c.toUpperCase() === "PH";
+  return gig.currencyCode === "PHP";
+}
+
 // Mirrors gig_map_section.dart's pay-range filter: compares the hourly rate
 // for an hourly gig, the flat budget otherwise, against the worker's own
-// currency. A gig in another currency is hidden entirely once a range is
-// set — amounts are never converted between currencies here.
-export function gigMatchesPayRange(gig: Gig, payMin: number | null, payMax: number | null, payCurrency: string): boolean {
+// currency. A gig in another currency is compared at its converted ("≈")
+// amount; without a rate yet it's left out.
+export function gigMatchesPayRange(
+  gig: Gig,
+  payMin: number | null,
+  payMax: number | null,
+  payCurrency: string,
+  convert?: (amount: number, from: string | undefined) => number | null,
+): boolean {
   if (payMin == null && payMax == null) return true;
-  if (gig.currencyCode !== payCurrency) return false;
-  const pay = gig.payType === "hourly" && gig.hourlyRate != null ? gig.hourlyRate : gig.budget;
+  const raw = gig.payType === "hourly" && gig.hourlyRate != null ? gig.hourlyRate : gig.budget;
+  const pay = gig.currencyCode === payCurrency ? raw : (convert?.(raw, gig.currencyCode) ?? null);
+  if (pay == null) return false;
   return (payMin == null || pay >= payMin) && (payMax == null || pay <= payMax);
 }
 

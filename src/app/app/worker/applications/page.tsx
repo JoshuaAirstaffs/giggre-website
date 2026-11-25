@@ -1,5 +1,6 @@
 "use client";
 
+import { useDisplayPay } from "@/hooks/use-display-pay";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -13,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
-import { capitalize, formatGigSchedule, formatPostedAge, payLabel } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge } from "@/lib/gig-format";
 import {
   CANCELLABLE_GIG_STATUSES,
   subscribeAcceptedApplications,
@@ -87,6 +88,8 @@ function GigProgressSteps({ status }: { status: string }) {
 }
 
 export default function MyApplicationsPage() {
+  // Gig pay in the worker's currency (≈ converted; see lib/display-currency.ts).
+  const { payLabel } = useDisplayPay();
   const uid = useAppSelector((root) => root.user.authUser?.uid);
   const [openGigs, setOpenGigs] = useState<Gig[]>([]);
   const [pendingLoaded, setPendingLoaded] = useState(false);
