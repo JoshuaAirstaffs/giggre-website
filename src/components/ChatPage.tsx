@@ -476,13 +476,26 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   // handleSelectRoom/handleStartChat do (cache lookup, else fetchChatPeer),
   // without creating a room doc: that still only happens lazily on first
   // send (see sendDirectMessage).
+  // Only ever auto-opens a given peerParam once per mount — without this
+  // guard, picking a different conversation afterward (handleSelectRoom)
+  // changes activePeer, which re-triggers this effect since it's a dep;
+  // the stale ?peer= (never cleared from the URL) would then re-match
+  // "not yet opened" and snap the view straight back to it. Most visible
+  // via the Giggre Support bubble (?peer=<supportUid>): open support, then
+  // click any other conversation — it used to bounce back to Support.
+  const appliedPeerParamRef = useRef<string | null>(null);
   useEffect(() => {
     if (!peerParam || !myUid || peerParam === myUid) return;
-    if (activePeer?.uid === peerParam) return;
+    if (appliedPeerParamRef.current === peerParam) return;
+    if (activePeer?.uid === peerParam) {
+      appliedPeerParamRef.current = peerParam;
+      return;
+    }
     let cancelled = false;
     const cached = peers.get(peerParam);
     (cached ? Promise.resolve(cached) : fetchChatPeer(peerParam)).then((peer) => {
       if (!cancelled) {
+        appliedPeerParamRef.current = peerParam;
         setActivePeer(peer);
         setSelectedRoomId(null);
       }
@@ -1149,11 +1162,12 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                   )
                 ) : (
                   <>
+                    {/* Always first in a support chat, even with history: older
+                        pages load in below it, so it stays at the very top. */}
+                    {isSupportChat && <SupportIntro name={myName} />}
                     {loadingOlder && (
                       <SkeletonBubbles count={2} />
                     )}
-                    {/* Above the oldest message, once there's no older page to load. */}
-                    {isSupportChat && !hasMoreOlder && !loadingOlder && <SupportIntro name={myName} />}
                     {messages.map((message, index) => {
                       const mine = message.senderId === myUid;
                       const avatarName = mine ? myName : activePeer.name;

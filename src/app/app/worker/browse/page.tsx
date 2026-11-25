@@ -646,6 +646,19 @@ const Browse = () => {
 
     const selectedGig = filteredGigs.find((gig) => gig.id === selectedId) ?? null;
 
+    // Mirrors gig_map_section.dart's general "others" fallback: below the
+    // filtered list (any filter combo — skill, distance, schedule, pay type/
+    // range), show every other gig that didn't match, same sort order,
+    // instead of dead-ending once the matches run out. Suppressed while
+    // actively text-searching, same as the app (a search result is exactly
+    // what was asked for).
+    const othersGigs = useMemo(() => {
+        if (searching) return [];
+        const shownIds = new Set(filteredGigs.map((g) => g.id));
+        const rest = allGigs.filter((g) => !shownIds.has(g.id));
+        return sortGigs(rest, sortOrder, myLocation, payCurrency, toMyCurrency);
+    }, [searching, filteredGigs, allGigs, sortOrder, myLocation, payCurrency, toMyCurrency]);
+
     useEffect(() => {
         const hostId = selectedGig?.hostId;
         if (!hostId || hostInfoById.has(hostId)) return;
@@ -861,6 +874,87 @@ const Browse = () => {
         payRangeLabel,
         `Sort: ${GIG_SORT_LABELS[sortOrder]}`,
     ];
+
+    // Shared between the main filtered list and the "other gigs" fallback
+    // below it — same card markup either way.
+    function renderGigCard(gig: Gig) {
+        return (
+            <div
+                key={gig.id}
+                onClick={() => {
+                    setSelectedId(gig.id);
+                    markViewed(gig.id);
+                }}
+                className={cn(
+                    "flex gap-4 rounded-lg border p-5 transition-all cursor-pointer",
+                    gig.id === selectedId
+                        ? "border-worker bg-worker-tint shadow-sm"
+                        : viewedGigIds.has(gig.id)
+                          // Viewed: flat, no outline (transparent keeps the size).
+                          ? "border-transparent bg-sidebar hover:bg-mist"
+                          // Unseen: outlined and raised. border-ink/20 follows the
+                          // theme, so it stays visible in dark mode too.
+                          : "border-ink/20 bg-sidebar shadow-md hover:shadow-lg"
+                )}
+            >
+                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} images={gig.images} />
+                <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                        <div
+                            className={cn(
+                                "line-clamp-1 font-display text-lg text-ink",
+                                viewedGigIds.has(gig.id) ? "font-medium" : "font-bold"
+                            )}
+                        >
+                            {gig.title}
+                            {!viewedGigIds.has(gig.id) && <span className="sr-only"> (not viewed)</span>}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                            <span className="font-semibold text-ink">{showPay(gig.currencyCode, gig)}</span>
+                            <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                aria-label={savedGigIds.has(gig.id) ? "Remove bookmark" : "Save gig"}
+                                className="text-muted hover:text-worker"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleSaved(gig);
+                                }}
+                            >
+                                <Bookmark className={cn("size-4", savedGigIds.has(gig.id) && "fill-worker text-worker")} />
+                            </Button>
+                        </div>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+                        <MapIcon className="size-3.5 shrink-0" />
+                        <span className="truncate">{gig.address}</span>
+                        <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
+                        {myLocation && gig.location && (
+                            <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
+                        )}
+                    </div>
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+                        <Badge variant="secondary" className={GIG_TYPE_BADGE_CLASSES[gig.gigType]}>
+                            {capitalize(gig.gigType)}
+                        </Badge>
+                        {formatPostedAge(gig.createdAt)} • {capitalize(gig.experienceLevel)}
+                        <span className="flex items-center gap-1 font-medium text-(--success-text)">
+                            • <Users className="size-3" />
+                            {Math.max(0, gig.workerSlots - gig.filledSlotCount)}/{gig.workerSlots} slot{gig.workerSlots === 1 ? "" : "s"}
+                        </span>
+                        {gig.gigType === "open" && hasApplied(gig) && (
+                            <span className="font-medium text-(--success-text)">• Applied</span>
+                        )}
+                    </p>
+                    {gig.requiredSkills.length > 0 && (
+                        <div className="mt-3">
+                            <Skills skills={gig.requiredSkills} />
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <>
@@ -1138,86 +1232,23 @@ const Browse = () => {
                             <p className="rounded-lg border border-hairline bg-sidebar p-6 text-sm text-destructive">{error}</p>
                         )}
 
-                        {!loading && !error && filteredGigs.length === 0 && (
+                        {!loading && !error && filteredGigs.length === 0 && othersGigs.length === 0 && (
                             <p className="rounded-lg border border-dashed border-hairline p-6 text-sm text-muted">{searching ? `No gigs match “${searchTerm.trim()}”.` : "No gigs match your filters."}</p>
                         )}
 
-                        {!loading && !error && filteredGigs.map((gig) => (
-                            <div
-                                key={gig.id}
-                                onClick={() => {
-                                    setSelectedId(gig.id);
-                                    markViewed(gig.id);
-                                }}
-                                className={cn(
-                                    "flex gap-4 rounded-lg border p-5 transition-all cursor-pointer",
-                                    gig.id === selectedId
-                                        ? "border-worker bg-worker-tint shadow-sm"
-                                        : viewedGigIds.has(gig.id)
-                                          // Viewed: flat, no outline (transparent keeps the size).
-                                          ? "border-transparent bg-sidebar hover:bg-mist"
-                                          // Unseen: outlined and raised. border-ink/20 follows the
-                                          // theme, so it stays visible in dark mode too.
-                                          : "border-ink/20 bg-sidebar shadow-md hover:shadow-lg"
-                                )}
-                            >
-                                <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} images={gig.images} />
-                                <div className="min-w-0 flex-1">
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div
-                                            className={cn(
-                                                "line-clamp-1 font-display text-lg text-ink",
-                                                viewedGigIds.has(gig.id) ? "font-medium" : "font-bold"
-                                            )}
-                                        >
-                                            {gig.title}
-                                            {!viewedGigIds.has(gig.id) && <span className="sr-only"> (not viewed)</span>}
-                                        </div>
-                                        <div className="flex shrink-0 items-center gap-1">
-                                            <span className="font-semibold text-ink">{showPay(gig.currencyCode, gig)}</span>
-                                            <Button
-                                                variant="ghost"
-                                                size="icon-sm"
-                                                aria-label={savedGigIds.has(gig.id) ? "Remove bookmark" : "Save gig"}
-                                                className="text-muted hover:text-worker"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    handleToggleSaved(gig);
-                                                }}
-                                            >
-                                                <Bookmark className={cn("size-4", savedGigIds.has(gig.id) && "fill-worker text-worker")} />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                    <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
-                                        <MapIcon className="size-3.5 shrink-0" />
-                                        <span className="truncate">{gig.address}</span>
-                                        <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
-                                        {myLocation && gig.location && (
-                                            <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
-                                        )}
-                                    </div>
-                                    <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
-                                        <Badge variant="secondary" className={GIG_TYPE_BADGE_CLASSES[gig.gigType]}>
-                                            {capitalize(gig.gigType)}
-                                        </Badge>
-                                        {formatPostedAge(gig.createdAt)} • {capitalize(gig.experienceLevel)}
-                                        <span className="flex items-center gap-1 font-medium text-(--success-text)">
-                                            • <Users className="size-3" />
-                                            {Math.max(0, gig.workerSlots - gig.filledSlotCount)}/{gig.workerSlots} slot{gig.workerSlots === 1 ? "" : "s"}
-                                        </span>
-                                        {gig.gigType === "open" && hasApplied(gig) && (
-                                            <span className="font-medium text-(--success-text)">• Applied</span>
-                                        )}
-                                    </p>
-                                    {gig.requiredSkills.length > 0 && (
-                                        <div className="mt-3">
-                                            <Skills skills={gig.requiredSkills} />
-                                        </div>
-                                    )}
-                                </div>
+                        {!loading && !error && filteredGigs.map((gig) => renderGigCard(gig))}
+
+                        {!loading && !error && othersGigs.length > 0 && (
+                            <div className="flex items-center gap-3 py-1">
+                                <Separator className="flex-1" />
+                                <span className="shrink-0 text-xs font-medium text-muted">
+                                    {filteredGigs.length === 0 ? "No matches" : "End of results"} · showing other gigs
+                                </span>
+                                <Separator className="flex-1" />
                             </div>
-                        ))}
+                        )}
+
+                        {!loading && !error && othersGigs.map((gig) => renderGigCard(gig))}
                     </div>
                 </div>
                 <div className="col-span-2 col-start-4 min-h-0 h-full">
