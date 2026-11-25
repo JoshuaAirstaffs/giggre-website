@@ -47,6 +47,7 @@ import { Separator } from "@/components/ui/separator";
 import { useAppSelector } from "@/store/hooks";
 import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
+import { useViewedGigs } from "@/hooks/use-viewed-gigs";
 import SkillIcon from "@/components/SkillIcon";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
 import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf } from "@/lib/gig-format";
@@ -339,6 +340,9 @@ const Browse = () => {
 
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    // Read/unread like the app's gig list. Only an actual click marks a gig
+    // viewed — the detail pane auto-selecting the first result doesn't.
+    const { viewed: viewedGigIds, markViewed } = useViewedGigs(uid);
     const [pendingActionId, setPendingActionId] = useState<string | null>(null);
     // Unverified earning limit (same check as the app before apply / accept).
     const { guard: limitGuard, dialog: limitDialog } = useUnverifiedLimitGuard();
@@ -1141,16 +1145,34 @@ const Browse = () => {
                         {!loading && !error && filteredGigs.map((gig) => (
                             <div
                                 key={gig.id}
-                                onClick={() => setSelectedId(gig.id)}
+                                onClick={() => {
+                                    setSelectedId(gig.id);
+                                    markViewed(gig.id);
+                                }}
                                 className={cn(
-                                    "flex gap-4 rounded-lg border p-5 shadow-sm transition-all cursor-pointer hover:shadow-md",
-                                    gig.id === selectedId ? "border-worker bg-worker-tint" : "border-hairline bg-sidebar hover:bg-mist"
+                                    "flex gap-4 rounded-lg border p-5 transition-all cursor-pointer",
+                                    gig.id === selectedId
+                                        ? "border-worker bg-worker-tint shadow-sm"
+                                        : viewedGigIds.has(gig.id)
+                                          // Viewed: flat, no outline (transparent keeps the size).
+                                          ? "border-transparent bg-sidebar hover:bg-mist"
+                                          // Unseen: outlined and raised. border-ink/20 follows the
+                                          // theme, so it stays visible in dark mode too.
+                                          : "border-ink/20 bg-sidebar shadow-md hover:shadow-lg"
                                 )}
                             >
                                 <GigSkillTile gigType={gig.gigType} requiredSkills={gig.requiredSkills} images={gig.images} />
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-start justify-between gap-2">
-                                        <div className="line-clamp-1 font-display text-lg font-semibold text-ink">{gig.title}</div>
+                                        <div
+                                            className={cn(
+                                                "line-clamp-1 font-display text-lg text-ink",
+                                                viewedGigIds.has(gig.id) ? "font-medium" : "font-bold"
+                                            )}
+                                        >
+                                            {gig.title}
+                                            {!viewedGigIds.has(gig.id) && <span className="sr-only"> (not viewed)</span>}
+                                        </div>
                                         <div className="flex shrink-0 items-center gap-1">
                                             <span className="font-semibold text-ink">{showPay(gig.currencyCode, gig)}</span>
                                             <Button

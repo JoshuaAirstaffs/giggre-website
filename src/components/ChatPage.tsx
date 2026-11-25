@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -153,6 +154,33 @@ function userSearchRatingLine(result: UserSearchResult): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
+// Live support "pre-chat": Giggre Support introduces itself at the top of
+// the chat — same copy as giggre_app's _SupportIntro (lib/screens/chat/
+// chat.dart). Display only: nothing is written to Firestore, so it costs
+// nothing and doesn't count as unread for either side.
+function SupportIntro({ name }: { name: string }) {
+  const firstName = name.trim().split(/\s+/)[0] ?? "";
+  const hi = firstName ? `Hi ${firstName}! 👋` : "Hi there! 👋";
+  return (
+    <div className="space-y-4 pt-2 pb-2">
+      <div className="flex flex-col items-center gap-1 text-center">
+        <span className="flex size-14 items-center justify-center rounded-full bg-white ring-1 ring-foreground/10">
+          <Image src="/assets/giggre_logo.png" alt="" width={40} height={40} className="object-contain" />
+        </span>
+        <p className="mt-1 text-sm font-semibold text-ink">Giggre Support</p>
+        <p className="text-xs text-muted">The Giggre team</p>
+      </div>
+      <div className="max-w-[75%] rounded-2xl border border-hairline bg-card px-3 py-2 text-sm text-ink">
+        <p>{hi} I&apos;m Giggre Support.</p>
+        <p className="mt-2">
+          Tell me anything about Giggre, or if you have a concern, a question or something isn&apos;t working, just
+          send me a message. I&apos;m here to help!
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ChatRoomRow({
   room,
   myUid,
@@ -294,6 +322,8 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
   // Mirrors chat.dart's bidirectional block check — either side blocking
   // disables the composer, but only the blocker sees an "Unblock" action.
   const isBlocked = activePeer ? myBlockedIds.has(activePeer.uid) : false;
+  // Chat with the live-support account → shows the Giggre Support intro.
+  const isSupportChat = !!supportUid && activePeer?.uid === supportUid;
   const isBlockedByPeer = myUid ? peerBlockedIds.has(myUid) : false;
   const chatDisabled = isBlocked || isBlockedByPeer;
   // A brand-new conversation (started via the + lookup) has no room doc yet
@@ -1112,12 +1142,18 @@ export default function ChatPage({ role }: { role?: "host" | "worker" } = {}) {
                 {messagesLoading ? (
                   <SkeletonBubbles />
                 ) : messages.length === 0 ? (
-                  <p className="text-center text-xs text-muted">No messages yet — say hello!</p>
+                  isSupportChat ? (
+                    <SupportIntro name={myName} />
+                  ) : (
+                    <p className="text-center text-xs text-muted">No messages yet — say hello!</p>
+                  )
                 ) : (
                   <>
                     {loadingOlder && (
                       <SkeletonBubbles count={2} />
                     )}
+                    {/* Above the oldest message, once there's no older page to load. */}
+                    {isSupportChat && !hasMoreOlder && !loadingOlder && <SupportIntro name={myName} />}
                     {messages.map((message, index) => {
                       const mine = message.senderId === myUid;
                       const avatarName = mine ? myName : activePeer.name;
