@@ -192,14 +192,14 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
-    if (!skillRequired.trim()) return toast.error("Please select a required skill (or type one under Other).");
-    if (skillRequired.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
-    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    if (!skillRequired.trim()) return toast.error("Choose the skill this gig needs, or type it under Other.");
+    if (skillRequired.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 letters).");
+    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Choose what kind of task this is.");
     const custom = !editGig && taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
     if (custom && "error" in custom) return toast.error(custom.error);
     const customTask = custom && "value" in custom ? custom.value : undefined;
     if (!editGig && selectedWorkers.length === 0) {
-      return toast.error("Please select at least one worker to offer this gig to.");
+      return toast.error("Choose at least one worker to offer this gig to.");
     }
     const contentError = await checkContent(customTask);
     if (contentError) return toast.error(contentError);
@@ -254,7 +254,7 @@ export default function OfferedGigForm({ preselectedWorker, editGig }: OfferedGi
       setPhotos([]);
     } catch (err) {
       console.error(editGig ? "Failed to update offered gig:" : "Failed to post offered gig:", err);
-      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post the gig. Please try again.");
+      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post your gig. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

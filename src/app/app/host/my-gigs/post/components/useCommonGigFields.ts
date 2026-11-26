@@ -226,33 +226,33 @@ export function useCommonGigFields() {
   // Shared across Quick/Open/Offered — each caller still checks its own
   // extra fields (skill, worker, etc.) before submitting.
   function validateCommon(): string | null {
-    if (!fields.title.trim()) return "Please enter a title.";
-    if (!fields.description.trim()) return "Please enter a description.";
+    if (!fields.title.trim()) return "Add a title so workers know what the gig is.";
+    if (!fields.description.trim()) return "Add a short description of the task and what you expect.";
     const rate = Number(fields.budget);
     if (!fields.budget.trim() || Number.isNaN(rate) || rate <= 0) {
-      return fields.payType === "hourly" ? "Please enter a valid hourly rate." : "Please enter a valid budget.";
+      return fields.payType === "hourly" ? "Enter an hourly rate greater than 0." : "Enter how much you'll pay (more than 0).";
     }
     if (fields.payType === "hourly") {
       const estimatedHours = Number(fields.estimatedHours);
       if (!fields.estimatedHours.trim() || Number.isNaN(estimatedHours) || estimatedHours <= 0) {
-        return "Please enter the estimated hours.";
+        return "Enter about how many hours the gig will take.";
       }
     }
     const workerSlots = Number(fields.workerSlots);
     if (!fields.workerSlots.trim() || Number.isNaN(workerSlots) || workerSlots < 1) {
-      return "Worker slots must be at least 1.";
+      return "You need at least 1 worker.";
     }
-    if (!fields.location) return "Please set the gig location.";
-    if (!fields.address.trim()) return "Please enter an address.";
+    if (!fields.location) return "Add the gig location: use your current location or pick a spot on the map.";
+    if (!fields.address.trim()) return "Add the gig address so workers know where to go.";
     // Mirrors the app's own validation exactly (post_*_gig_screen.dart): only
     // the date is required — time defaults to 8:00 AM if left unset. Not
     // in the app: "Anytime" skips this entirely — see getScheduledDate.
     if (!fields.anytime) {
-      if (!fields.scheduledDate) return "Schedule is required. Please pick a date and time, or choose Anytime.";
+      if (!fields.scheduledDate) return "Pick a date and time for the gig, or turn on Anytime.";
       const scheduled = getScheduledDate();
-      if (!scheduled) return "Schedule is required. Please pick a date and time, or choose Anytime.";
+      if (!scheduled) return "Pick a date and time for the gig, or turn on Anytime.";
       if (scheduled.getTime() < Date.now()) {
-        return "That time has already passed. Please choose a time in the future.";
+        return "That time has already passed. Pick a later time or another day.";
       }
     }
 

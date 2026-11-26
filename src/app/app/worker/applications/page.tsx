@@ -14,7 +14,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { useAppSelector } from "@/store/hooks";
-import { capitalize, formatGigSchedule, formatPostedAge } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, gigAreaLabel } from "@/lib/gig-format";
 import {
   CANCELLABLE_GIG_STATUSES,
   subscribeAcceptedApplications,
@@ -274,10 +274,11 @@ export default function MyApplicationsPage() {
                           </Badge>
                           {gig.hostName && <p className="text-xs text-muted">by {gig.hostName}</p>}
                         </div>
-                        {gig.address && (
+                        {/* Pending: only the general area until the host accepts. */}
+                        {gigAreaLabel(gig.address, (gig as { place?: Record<string, string> }).place) && (
                           <div className="flex items-center gap-1 text-xs text-muted">
                             <MapPin className="size-3 shrink-0" />
-                            <p className="truncate">{gig.address}</p>
+                            <p className="truncate">{gigAreaLabel(gig.address, (gig as { place?: Record<string, string> }).place)}</p>
                           </div>
                         )}
                         <div className="flex items-center gap-1 text-xs text-muted">

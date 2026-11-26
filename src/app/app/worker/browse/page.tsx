@@ -49,7 +49,7 @@ import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import SkillIcon from "@/components/SkillIcon";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatScheduleShort, formatWorkDuration, initialsOf, gigAreaOrHidden, approximateCoords } from "@/lib/gig-format";
 import { REPORT_REASONS, submitReport } from "@/lib/reports";
 import {
     acceptOfferedGig,
@@ -1169,7 +1169,7 @@ const Browse = () => {
                                     </div>
                                     <div className="mt-1 flex items-center gap-1.5 text-sm text-muted">
                                         <MapIcon className="size-3.5 shrink-0" />
-                                        <span className="truncate">{gig.address}</span>
+                                        <span className="truncate">{gigAreaOrHidden(gig.address, gig.place)}</span>
                                         <span className="shrink-0">· {formatScheduleShort(gig.scheduledDate)}</span>
                                         {myLocation && gig.location && (
                                             <span className="shrink-0">· {units.format(haversineKm(myLocation, gig.location) * 1000)}</span>
@@ -1305,16 +1305,18 @@ const Browse = () => {
                                 <Separator />
 
                                 <div>
-                                    <SectionLabel icon={MapIcon}>Address</SectionLabel>
-                                    <p className="mt-1 text-sm text-ink">{selectedGig.address}</p>
+                                    {/* Not accepted yet: only the general area (city, province) and an approximate map. */}
+                                    <SectionLabel icon={MapIcon}>Area</SectionLabel>
+                                    <p className="mt-1 text-sm text-ink">{gigAreaOrHidden(selectedGig.address, selectedGig.place)}</p>
+                                    <p className="text-xs text-muted">Exact address shown once you&apos;re accepted</p>
                                     {selectedGig.location && (
                                         <a
-                                            href={`https://www.google.com/maps?q=${selectedGig.location.lat},${selectedGig.location.lng}`}
+                                            href={`https://www.google.com/maps?q=${approximateCoords(selectedGig.location.lat, selectedGig.location.lng).lat},${approximateCoords(selectedGig.location.lat, selectedGig.location.lng).lng}`}
                                             target="_blank"
                                             rel="noopener noreferrer"
                                             className="mt-1 inline-block text-sm text-worker hover:underline"
                                         >
-                                            See on map
+                                            See area on map
                                         </a>
                                     )}
                                 </div>

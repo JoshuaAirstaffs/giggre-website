@@ -121,3 +121,28 @@ export function formatElapsed(ms: number) {
   const pad = (n: number) => n.toString().padStart(2, "0");
   return hours > 0 ? `${hours}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
 }
+
+// Mirrors giggre_app's core/utils/gig_area.dart: a gig's general area —
+// city and province/state, never the street — for workers who haven't been
+// accepted yet. From the gig's saved `place`; for older gigs, the address
+// minus its street line and anything with a house number / ZIP.
+export function gigAreaLabel(address: string | undefined, place?: Record<string, string> | null): string {
+  const city = place?.city;
+  const upper = place?.province ?? place?.state ?? place?.region ?? place?.county;
+  const fromPlace = [city, upper && upper !== city ? upper : undefined].filter((v): v is string => !!v);
+  if (fromPlace.length > 0) return fromPlace.join(", ");
+  const segs = (address ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  if (segs.length <= 1) return segs[0] && !/\d/.test(segs[0]) ? segs[0] : "";
+  const rest = segs
+    .slice(1)
+    .map((s) => s.replace(/\b\d{3,6}\b/g, "").trim())
+    .filter((s) => s && !/^\d/.test(s));
+  return rest.slice(-2).join(", ");
+}
+
+/** The area, or a note that it's shown after acceptance. */
+export const gigAreaOrHidden = (address: string | undefined, place?: Record<string, string> | null) =>
+  gigAreaLabel(address, place) || "Area shown after you're accepted";
+
+/** ~1 km-rounded coordinates for a "View area" link that doesn't pinpoint the address. */
+export const approximateCoords = (lat: number, lng: number) => ({ lat: Math.round(lat * 100) / 100, lng: Math.round(lng * 100) / 100 });

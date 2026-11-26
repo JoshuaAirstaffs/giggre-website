@@ -108,9 +108,9 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
-    if (!requiredSkill.trim()) return toast.error("Please select a required skill (or type one under Other).");
-    if (requiredSkill.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 characters).");
-    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    if (!requiredSkill.trim()) return toast.error("Choose the skill this gig needs, or type it under Other.");
+    if (requiredSkill.trim().length < 2) return toast.error("Type the skill this gig needs (at least 2 letters).");
+    if (!editGig && hasTaskTypes && !taskTypeId) return toast.error("Choose what kind of task this is.");
     const custom = !editGig && taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
     if (custom && "error" in custom) return toast.error(custom.error);
     const customTask = custom && "value" in custom ? custom.value : undefined;
@@ -166,7 +166,7 @@ export default function OpenGigForm({ editGig }: OpenGigFormProps) {
       setExperienceLevel("entry");
     } catch (err) {
       console.error(editGig ? "Failed to update open gig:" : "Failed to post open gig:", err);
-      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post the gig. Please try again.");
+      toast.error(editGig ? "Couldn't save changes. Please try again." : "Couldn't post your gig. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }

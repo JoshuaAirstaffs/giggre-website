@@ -19,7 +19,7 @@ import { useAppSelector } from "@/store/hooks";
 import { GigPhotos } from "@/app/app/host/my-gigs/post/components/GigPhotosInput";
 import { useDistanceUnits } from "@/hooks/use-distance-units";
 import { GIG_TYPE_BADGE_CLASSES } from "@/lib/earnings";
-import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf } from "@/lib/gig-format";
+import { capitalize, formatGigSchedule, formatPostedAge, formatWorkDuration, initialsOf, gigAreaOrHidden, approximateCoords } from "@/lib/gig-format";
 import {
   acceptOfferedGig,
   applyToOpenGig,
@@ -356,7 +356,7 @@ export default function SavedGigsPage() {
                       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
                         <span className="flex items-center gap-1.5 truncate">
                           <MapIcon className="size-3.5 shrink-0" />
-                          <span className="truncate">{saved.gig.address}</span>
+                          <span className="truncate">{gigAreaOrHidden(saved.gig.address, (saved.gig as { place?: Record<string, string> }).place)}</span>
                         </span>
                         <span className="flex items-center gap-1.5 shrink-0">
                           <Calendar className="size-3.5" />
@@ -461,16 +461,18 @@ export default function SavedGigsPage() {
                 <Separator />
 
                 <div>
-                  <SectionLabel icon={MapIcon}>Address</SectionLabel>
-                  <p className="mt-1 text-sm text-ink">{viewingGig.address}</p>
+                  {/* Saved (not accepted): only the general area and an approximate map. */}
+                  <SectionLabel icon={MapIcon}>Area</SectionLabel>
+                  <p className="mt-1 text-sm text-ink">{gigAreaOrHidden(viewingGig.address, (viewingGig as { place?: Record<string, string> }).place)}</p>
+                  <p className="text-xs text-muted">Exact address shown once you&apos;re accepted</p>
                   {viewingGig.location && (
                     <a
-                      href={`https://www.google.com/maps?q=${viewingGig.location.lat},${viewingGig.location.lng}`}
+                      href={`https://www.google.com/maps?q=${approximateCoords(viewingGig.location.lat, viewingGig.location.lng).lat},${approximateCoords(viewingGig.location.lat, viewingGig.location.lng).lng}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="mt-1 inline-block text-sm text-worker hover:underline"
                     >
-                      See on map
+                      See area on map
                     </a>
                   )}
                 </div>

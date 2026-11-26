@@ -240,7 +240,7 @@ export default function QuickGigForm() {
     if (!authUser?.uid) return;
     const error = validateCommon();
     if (error) return toast.error(error);
-    if (hasTaskTypes && !taskTypeId) return toast.error("Pick the type of task.");
+    if (hasTaskTypes && !taskTypeId) return toast.error("Choose what kind of task this is.");
     const custom = taskTypeId === OTHER_TASK_TYPE ? checkCustomTaskType(customTaskType) : null;
     if (custom && "error" in custom) return toast.error(custom.error);
     const customTask = custom && "value" in custom ? custom.value : undefined;
@@ -294,7 +294,7 @@ export default function QuickGigForm() {
       setTaskTypeId("");
     } catch (err) {
       console.error("Failed to post quick gig:", err);
-      toast.error("Couldn't post the gig. Please try again.");
+      toast.error("Couldn't post your gig. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
