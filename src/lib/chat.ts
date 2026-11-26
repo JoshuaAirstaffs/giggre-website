@@ -382,7 +382,7 @@ export function attachmentTypeForFile(file: File): AttachmentType {
   return "file";
 }
 
-const ATTACHMENT_PREVIEW_TEXT: Record<AttachmentType, (name: string) => string> = {
+export const ATTACHMENT_PREVIEW_TEXT: Record<AttachmentType, (name: string) => string> = {
   image: () => "📷 Photo",
   video: () => "🎥 Video",
   file: (name) => `📎 ${name}`,
