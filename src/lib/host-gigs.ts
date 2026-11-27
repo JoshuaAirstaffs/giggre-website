@@ -537,7 +537,12 @@ async function buildHostGigDetail(
     [cancelledAt ? Timestamp.fromDate(cancelledAt) : undefined, "Cancelled"],
   ];
   const timeline: HostGigTimelineEntry[] = timelineSource
-    .filter((entry): entry is [Timestamp, string] => entry[0] !== undefined)
+    // `!= null` (not just `!== undefined`) matters here: a serverTimestamp()
+    // write (selectedAt, completedAt, etc.) reads back as `null` in the
+    // optimistic local snapshot Firestore delivers before the server
+    // round-trip resolves it — e.g. right after selectApplicantForOpenGig
+    // sets selectedAt, which crashed this whole page on `null.toDate()`.
+    .filter((entry): entry is [Timestamp, string] => entry[0] != null)
     .map(([ts, label]) => ({ label, at: ts.toDate() }))
     .sort((a, b) => b.at.getTime() - a.at.getTime());
 
