@@ -253,9 +253,22 @@ export function gigMatchesPayType(gig: Gig, payType: PayTypeFilter): boolean {
 // _isPhGig): the country saved when it was posted (place.countryCode), else
 // its currency for older gigs. Workers in the Philippines see only PH gigs;
 // workers in the US and everywhere else (USD default) see only non-PH gigs.
-export function isPhGig(gig: Pick<Gig, "place" | "currencyCode">): boolean {
+// Some gigs (e.g. bulk-created ones whose address lookup failed) have no
+// saved country and a USD price even though they're in the Philippines, so
+// the map position is checked before the currency.
+export function isPhGig(gig: Pick<Gig, "place" | "currencyCode" | "address" | "location">): boolean {
   const c = gig.place?.countryCode;
   if (c) return c.toUpperCase() === "PH";
+  const country = gig.place?.country;
+  if (country) return country.toLowerCase().includes("philippines");
+  if ((gig.address ?? "").toLowerCase().includes("philippines")) return true;
+  const loc = gig.location;
+  if (loc && !(loc.lat === 0 && loc.lng === 0)) {
+    // Rough Philippines bounding box, Sabah (Malaysia) carved out.
+    const inBox = loc.lat >= 4.2 && loc.lat <= 21.5 && loc.lng >= 116 && loc.lng <= 127;
+    const sabah = loc.lat < 7.4 && loc.lng < 119.3;
+    return inBox && !sabah;
+  }
   return gig.currencyCode === "PHP";
 }
 
